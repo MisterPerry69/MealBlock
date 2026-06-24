@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#121315">
+<title>MealBlock</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="phone">
+
+  <!-- ============ HEADER ============ -->
+  <header>
+    <div class="hl">
+      <div class="crest">
+        <svg width="26" height="26" viewBox="0 0 28 28">
+          <circle cx="14" cy="14" r="9" fill="#243028" stroke="#3a5a42" stroke-width="1.5"/>
+          <circle cx="14" cy="14" r="4.5" fill="#7bd88f"/>
+          <rect x="5" y="6" width="1.8" height="16" rx="0.9" fill="#cfe7d6"/>
+          <rect x="21.2" y="6" width="1.8" height="16" rx="0.9" fill="#cfe7d6"/>
+        </svg>
+      </div>
+      <div class="htitle">
+        <small id="hsub">Caricamento…</small>
+        <div class="t" id="htitle">MealBlock</div>
+      </div>
+    </div>
+    <div class="toggle" id="dayToggle" hidden>
+      <button data-type="ON">ON</button>
+      <button data-type="OFF">OFF</button>
+    </div>
+  </header>
+
+  <!-- ============ MAIN ============ -->
+  <main>
+    <!-- OGGI -->
+    <section class="screen active" id="screen-oggi">
+      <div class="rings" id="rings"></div>
+      <div class="snackbar" id="snackbar"></div>
+      <div id="gapnote-slot"></div>
+      <div class="grid" id="mealGrid"></div>
+      <div class="pad" style="padding-bottom:14px"><button class="btn ghost" id="regenBtn" style="width:100%">↻ Rigenera giornata</button></div>
+      <div id="prep-slot"></div>
+    </section>
+
+    <!-- SETTIMANA -->
+    <section class="screen" id="screen-settimana">
+      <div class="section-title">La settimana</div>
+      <div class="pad row" style="margin-bottom:6px">
+        <button class="btn primary" id="genWeekBtn" style="flex:1">Genera / Rigenera settimana</button>
+      </div>
+      <div id="weekList"></div>
+    </section>
+
+    <!-- SPESA -->
+    <section class="screen" id="screen-spesa">
+      <div class="section-title">Lista della spesa <span id="shopMeta" style="text-transform:none;letter-spacing:0"></span></div>
+      <div id="shopList"></div>
+      <div class="pad" style="padding:14px 16px"><button class="btn ghost" id="clearChecks" style="width:100%">Azzera spunte</button></div>
+    </section>
+
+    <!-- ALIMENTI -->
+    <section class="screen" id="screen-alimenti">
+      <div class="tabs">
+        <button class="on" data-ftab="db">Database</button>
+        <button data-ftab="blocks">Blocchi</button>
+      </div>
+      <div id="ftab-db">
+        <div class="pad" style="padding:6px 16px 4px"><button class="btn primary sm" id="addFood">+ Nuovo alimento</button>
+          <button class="btn ghost sm" id="resetFoods" style="margin-left:8px">Ripristina seed</button></div>
+        <div id="foodList"></div>
+      </div>
+      <div id="ftab-blocks" hidden>
+        <div id="blockList"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ NAV ============ -->
+  <nav id="nav">
+    <button class="active" data-screen="oggi">
+      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" fill="#7bd88f33" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Oggi</button>
+    <button data-screen="settimana">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M4 9 h16 M9 3 v4 M15 3 v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Settimana</button>
+    <button data-screen="spesa">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M3 4 h2 l2.2 11 a2 2 0 0 0 2 1.6 h7.5 a2 2 0 0 0 2 -1.5 L21 8 H6.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="20" r="1.4" fill="currentColor"/><circle cx="18" cy="20" r="1.4" fill="currentColor"/></svg>Spesa</button>
+    <button data-screen="alimenti">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M7 4 v7 a2 2 0 0 0 4 0 V4 M9 4 v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 4 c-2 1 -2 6 0 8 v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Alimenti</button>
+  </nav>
+
+  <!-- ============ SHEET (modal) ============ -->
+  <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
+</div>
+
+<script src="data.js"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  }
+</script>
+</body>
+</html>

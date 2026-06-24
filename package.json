@@ -1,0 +1,14 @@
+{
+  "name": "mealblock",
+  "version": "1.0.0",
+  "description": "MealBlock — motore nutrizionale meal-block (PWA vanilla)",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node engine.test.js"
+  },
+  "private": true,
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "playwright-core": "^1.61.1"
+  }
+}
