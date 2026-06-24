@@ -284,7 +284,7 @@
       const bm = E.calcMacros(b.items, FOODS);
       const body = `
         <h3>${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</h3>
-        <div class="hint">Totale pasto: ${bm.kcal} kcal · P${Math.round(bm.protein)} C${Math.round(bm.carbs)} F${Math.round(bm.fat)}</div>
+        <div class="modal-total">${macroPills(bm, { size: "md", showKcal: true })}</div>
 
         ${opts.length > 1 ? `<label>Opzione pasto</label>
         <div class="chiprow">${opts.map((id) => `<button class="chip ${id === b.blockId ? "on" : ""}" data-pick="${id}">${SEED.BLOCKS[id].label.replace(/^.*· /, "")}</button>`).join("")}</div>` : ""}
@@ -301,7 +301,7 @@
                 <span class="fi-name">${f.label}</span>
                 <span class="fi-amt">${amt}</span>
               </div>
-              <div class="fi-macros">${im.kcal} kcal · P${Math.round(im.protein)} C${Math.round(im.carbs)} F${Math.round(im.fat)}</div>
+              <div class="fi-macros">${macroPills(im, { size: "sm", showKcal: true })}</div>
               <div class="fi-actions">
                 <button class="btn ghost sm" data-edit="${idx}">Grammi</button>
                 <button class="btn ghost sm" data-sub="${idx}">Sostituisci</button>
@@ -367,7 +367,10 @@
       // gap = macro che l'alimento corrente apporta (per mantenere il pasto invariato)
       const gap = E.calcMacros([it], FOODS);
       const present = b.items.map((x) => x.food);
-      const top3 = E.solveGap({ gap, data: data(), exclude: present });
+      const curCat = FOODS[it.food]?.cat;
+      // candidati: tutti tranne i jolly; preferisci la stessa categoria
+      const cands = Object.keys(FOODS).filter((id) => !FOODS[id].jolly);
+      const top3 = E.solveGap({ gap, data: data(), exclude: present, candidates: cands, preferCat: curCat });
       const body = `<h3>Sostituisci ${FOODS[it.food].label}</h3>
         <div class="hint">Proposte che mantengono i macro del pasto. Oppure scegli liberamente.</div>
         <div id="subProps">${renderProposals(top3, "Migliori sostituti")}</div>
@@ -412,6 +415,16 @@
 
   function catColor(cat) {
     return { protein: "var(--pro)", carb: "var(--carb)", fat: "var(--fat)", fruit: "#c6e85a", extra: "#c0a0e0" }[cat] || "var(--dim)";
+  }
+
+  // pillole macro colorate, ordine C / P / F (+ kcal opzionale)
+  // size: "sm" | "md". showKcal mostra anche le kcal a sinistra.
+  function macroPills(m, opts = {}) {
+    const k = `<span class="pill pill-k ${opts.size || ""}">${Math.round(m.kcal)} <i>kcal</i></span>`;
+    const c = `<span class="pill pill-c ${opts.size || ""}"><b>C</b>arbo ${Math.round(m.carbs)}</span>`;
+    const p = `<span class="pill pill-p ${opts.size || ""}"><b>P</b>rot ${Math.round(m.protein)}</span>`;
+    const f = `<span class="pill pill-f ${opts.size || ""}"><b>F</b>at ${Math.round(m.fat)}</span>`;
+    return `<span class="pills">${opts.showKcal ? k : ""}${c}${p}${f}</span>`;
   }
 
   function renderProposals(top3, title) {
@@ -459,14 +472,51 @@
   // ============================================================
   //  RENDER: SETTIMANA
   // ============================================================
+  // sceglie le opzioni della settimana rispettando i limiti di frequenza
+  // (per blocco e per alimento) e massimizzando la varietà.
+  function planWeekSelections() {
+    const blockLimits = SEED.BLOCK_WEEK_LIMITS || {};
+    const foodLimits = SEED.FOOD_WEEK_LIMITS || {};
+    const blockCount = {}, foodCount = {}, lastUsed = {};
+    const itemsOf = (id) => SEED.BLOCKS[id].items.map((x) => x.food);
+
+    const choose = (slot, dayIdx) => {
+      const opts = SEED.BLOCK_OPTIONS[slot] || [];
+      // candidati che non sforano i limiti
+      let avail = opts.filter((id) => {
+        if ((blockCount[id] || 0) >= (blockLimits[id] ?? 99)) return false;
+        for (const f of itemsOf(id)) if ((foodCount[f] || 0) >= (foodLimits[f] ?? 99)) return false;
+        return true;
+      });
+      if (!avail.length) {
+        // vincoli impossibili da rispettare (troppe poche opzioni): rilassa
+        // scegliendo l'opzione MENO usata, così l'eccesso si spalma il più
+        // uniformemente possibile invece di accanirsi su un blocco.
+        avail = opts.slice().sort((a, b) => (blockCount[a] || 0) - (blockCount[b] || 0));
+      } else {
+        // preferisci il meno usato di recente, poi il meno usato in assoluto
+        avail.sort((a, b) => (lastUsed[a] ?? -9) - (lastUsed[b] ?? -9) || (blockCount[a] || 0) - (blockCount[b] || 0));
+      }
+      const pickId = avail[0];
+      blockCount[pickId] = (blockCount[pickId] || 0) + 1;
+      lastUsed[pickId] = dayIdx;
+      for (const f of itemsOf(pickId)) foodCount[f] = (foodCount[f] || 0) + 1;
+      return pickId;
+    };
+
+    const sels = [];
+    for (let i = 0; i < 7; i++) sels.push({ pranzo: choose("pranzo", i), cena: choose("cena", i) });
+    return sels;
+  }
+
   function genWeek() {
     const days = [];
-    // parte da oggi, 7 giorni
     const base = new Date();
+    const sels = planWeekSelections();
     for (let i = 0; i < 7; i++) {
       const d = new Date(base); d.setDate(base.getDate() + i);
       const dt = onTypeForDate(d);
-      const day = buildDay(dt, rotatedSelection(i));
+      const day = buildDay(dt, sels[i]);
       day.dow = d.getDay();
       day.dateLabel = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
       days.push(day);
@@ -523,36 +573,41 @@
 
   // --- drag & drop (Pointer Events: dito + mouse) per scambiare giorni ---
   function setupWeekDrag() {
-    let dragIdx = null, ghost = null, startY = 0;
+    let dragIdx = null, ghost = null, moved = false;
+    // blocca il menu contestuale (long-press) sull'intera lista durante il drag
+    const list = $("#weekList");
+    list.addEventListener("contextmenu", (e) => { if (dragIdx !== null) e.preventDefault(); });
+
     $$("[data-drag]").forEach((handle) => {
+      handle.style.touchAction = "none"; // impedisce lo scroll/gesti del browser sul grip
       handle.addEventListener("pointerdown", (e) => {
-        // non iniziare drag se tocco lo switch
         if (e.target.closest("[data-wswitch]")) return;
-        dragIdx = +handle.dataset.drag;
-        const card = handle.closest(".weekday");
-        startY = e.clientY;
-        ghost = card; card.classList.add("dragging");
+        e.preventDefault();
+        dragIdx = +handle.dataset.drag; moved = false;
+        ghost = handle.closest(".weekday"); ghost.classList.add("dragging");
         handle.setPointerCapture(e.pointerId);
       });
       handle.addEventListener("pointermove", (e) => {
         if (dragIdx === null) return;
-        const cards = $$(".weekday");
-        const over = cards.find((c) => {
+        e.preventDefault(); moved = true;
+        const over = $$(".weekday").find((c) => {
           const r = c.getBoundingClientRect();
           return e.clientY >= r.top && e.clientY <= r.bottom;
         });
-        cards.forEach((c) => c.classList.toggle("droptarget", c === over && +c.dataset.wd !== dragIdx));
+        $$(".weekday").forEach((c) => c.classList.toggle("droptarget", c === over && +c.dataset.wd !== dragIdx));
       });
-      handle.addEventListener("pointerup", (e) => {
+      const finish = (e) => {
         if (dragIdx === null) return;
-        const cards = $$(".weekday");
-        const over = cards.find((c) => {
+        const over = $$(".weekday").find((c) => {
           const r = c.getBoundingClientRect();
           return e.clientY >= r.top && e.clientY <= r.bottom;
         });
-        if (over && +over.dataset.wd !== dragIdx) swapDays(dragIdx, +over.dataset.wd);
-        dragIdx = null; if (ghost) ghost.classList.remove("dragging"); renderSettimana();
-      });
+        const from = dragIdx; dragIdx = null;
+        if (ghost) ghost.classList.remove("dragging");
+        if (moved && over && +over.dataset.wd !== from) swapDays(from, +over.dataset.wd);
+        else renderSettimana();
+      };
+      handle.addEventListener("pointerup", finish);
       handle.addEventListener("pointercancel", () => { dragIdx = null; renderSettimana(); });
     });
   }
@@ -625,12 +680,10 @@
       const f = FOODS[id];
       const col = catColor(f.cat);
       return `<button class="foodcard" data-edit="${id}" style="--cc:${col}">
-        <span class="fc-emoji">${foodEmoji(id, f)}</span>
+        <span class="fc-top"><span class="fc-emoji">${foodEmoji(id, f)}</span>${f.jolly ? '<span class="jolly-tag">jolly</span>' : ""}</span>
         <span class="fc-name">${f.label || id}</span>
-        <span class="fc-macros">
-          <span class="fc-k">${f.kcal}</span>
-          <span>P${f.protein}</span><span>C${f.carbs}</span><span>F${f.fat}</span>
-        </span>
+        <span class="fc-sub">${f.kcal} kcal · 100g</span>
+        ${macroPills(f, { size: "sm" })}
       </button>`;
     }).join("");
     $$("[data-edit]").forEach((b) => b.onclick = () => openFoodEditor(b.dataset.edit));
@@ -638,21 +691,23 @@
 
   function openFoodEditor(id) {
     const f = id ? FOODS[id] : { label: "", kcal: 0, carbs: 0, protein: 0, fat: 0, cat: "carb" };
-    const cats = ["carb", "protein", "fat", "fruit", "extra"];
+    const cats = [["carb", "Carboidrato"], ["protein", "Proteina"], ["fat", "Grasso"], ["fruit", "Frutta"], ["extra", "Extra"]];
     const body = `<h3>${id ? "Modifica" : "Nuovo"} alimento</h3>
-      <div class="hint">Valori per 100g.</div>
-      <label>Nome</label><input id="fLabel" value="${f.label || ""}">
+      <div class="hint">Valori nutrizionali per 100g.</div>
+      <label>Nome</label><input id="fLabel" value="${f.label || ""}" placeholder="es. Riso basmati">
       <div class="grid2">
-        <div><label>Kcal</label><input id="fKcal" type="number" value="${f.kcal}"></div>
-        <div><label>Categoria</label><select id="fCat">${cats.map((c) => `<option ${c === f.cat ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+        <div><label>Calorie (kcal)</label><input id="fKcal" type="number" inputmode="numeric" value="${f.kcal}"></div>
+        <div><label>Categoria</label><select id="fCat">${cats.map(([c, l]) => `<option value="${c}" ${c === f.cat ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       </div>
-      <div class="grid2">
-        <div><label>Proteine</label><input id="fP" type="number" step="0.1" value="${f.protein}"></div>
-        <div><label>Carboidrati</label><input id="fC" type="number" step="0.1" value="${f.carbs}"></div>
+      <div class="grid3">
+        <div><label>Carbo (g)</label><input id="fC" type="number" step="0.1" inputmode="decimal" value="${f.carbs}"></div>
+        <div><label>Prot (g)</label><input id="fP" type="number" step="0.1" inputmode="decimal" value="${f.protein}"></div>
+        <div><label>Fat (g)</label><input id="fF" type="number" step="0.1" inputmode="decimal" value="${f.fat}"></div>
       </div>
-      <label>Grassi</label><input id="fF" type="number" step="0.1" value="${f.fat}">
+      <label class="check"><input type="checkbox" id="fJolly" ${f.jolly ? "checked" : ""}>
+        <span><b>Jolly</b> — non usarlo nelle giornate generate (lo aggiungo io quando voglio)</span></label>
       <div class="actions">
-        ${id ? '<button class="btn ghost" id="delFood" style="flex:0 0 auto">Elimina</button>' : ""}
+        ${id ? '<button class="btn danger" id="delFood">Elimina</button>' : ""}
         <button class="btn ghost" data-close>Annulla</button>
         <button class="btn primary" id="saveFood">Salva</button>
       </div>`;
@@ -665,6 +720,7 @@
           label, cat: $("#fCat", sh).value,
           kcal: +$("#fKcal", sh).value || 0, protein: +$("#fP", sh).value || 0,
           carbs: +$("#fC", sh).value || 0, fat: +$("#fF", sh).value || 0,
+          ...($("#fJolly", sh).checked ? { jolly: true } : {}),
           ...(f.unit ? { unit: f.unit } : {}),
         };
         LS.set("mb_foods", FOODS); closeSheet(); renderFoods();
@@ -690,7 +746,7 @@
           ${b.items.map((it) => `<div class="bi"><span class="fi-dot" style="background:${catColor(FOODS[it.food]?.cat)}"></span>${FOODS[it.food]?.label || it.food} · ${it.grams === "flex" ? "auto" : it.grams + "g"}</div>`).join("")}
           ${b.onExtras ? `<div class="bi extra">+ ON: ${b.onExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
           ${b.offExtras ? `<div class="bi extra">+ OFF: ${b.offExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
-          <div class="bmacro">~ ${m.kcal} kcal · P${Math.round(m.protein)} C${Math.round(m.carbs)} F${Math.round(m.fat)}</div>
+          <div class="bmacro">${macroPills(m, { size: "sm", showKcal: true })}</div>
         </div>`;
       }).join("");
       return `<div class="slot-group"><div class="slot-head">${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</div>${cards}</div>`;
@@ -709,23 +765,23 @@
       const t = TARGETS[type];
       const derived = t.protein * 4 + t.carbs * 4 + t.fat * 9;
       const mismatch = Math.abs(derived - t.kcal) > 20;
+      const field = (m, lab, cls) => `<div class="proffield ${cls}">
+        <label>${lab}</label><input type="number" inputmode="numeric" data-t="${type}" data-m="${m}" value="${t[m]}"></div>`;
       return `<div class="profcard">
-        <div class="profhead"><span class="wtype ${type}">${type}</span> <span class="dim">target giornaliero</span></div>
-        <div class="grid2">
-          <div><label>Proteine (g)</label><input type="number" data-t="${type}" data-m="protein" value="${t.protein}"></div>
-          <div><label>Carboidrati (g)</label><input type="number" data-t="${type}" data-m="carbs" value="${t.carbs}"></div>
+        <div class="profhead"><span class="wtype ${type}">${type}</span> <span class="dim">${type === "ON" ? "giorni di allenamento" : "giorni di riposo"}</span></div>
+        <div class="profgrid">
+          ${field("carbs", "Carbo (g)", "f-c")}
+          ${field("protein", "Prot (g)", "f-p")}
+          ${field("fat", "Fat (g)", "f-f")}
+          ${field("kcal", "Calorie (kcal)", "f-k")}
         </div>
-        <div class="grid2">
-          <div><label>Grassi (g)</label><input type="number" data-t="${type}" data-m="fat" value="${t.fat}"></div>
-          <div><label>Calorie (kcal)</label><input type="number" data-t="${type}" data-m="kcal" value="${t.kcal}"></div>
-        </div>
-        <div class="profcheck ${mismatch ? "warn" : ""}">P·4 + C·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} ⚠️` : "✓"}</div>
+        <div class="profcheck ${mismatch ? "warn" : ""}">C·4 + P·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} impostate ⚠️` : "✓ coerente"}</div>
       </div>`;
     };
     $("#profileBody").innerHTML = `
-      <div class="hint pad" style="padding:0 16px 4px">Modifica i tuoi target. Le giornate verranno ricalcolate su questi valori.</div>
+      <div class="hint" style="padding:0 18px 6px;font-size:14px">Imposta i tuoi target macro. Le giornate verranno ricalcolate su questi valori.</div>
       ${card("ON")}${card("OFF")}
-      <div class="pad" style="padding:6px 16px 20px"><button class="btn primary" id="saveProfile" style="width:100%">Salva target</button></div>`;
+      <div class="pad" style="padding:8px 16px 24px"><button class="btn primary" id="saveProfile" style="width:100%;padding:15px;font-size:16px">Salva target</button></div>`;
     const refreshChecks = () => {
       $$("#profileBody .profcard").forEach((cardEl, i) => {
         const type = i === 0 ? "ON" : "OFF"; const t = TARGETS[type];

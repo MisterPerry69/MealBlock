@@ -96,11 +96,11 @@
   // ------------------------------------------------------------
   function fillFlexCarbs(items, gapCarbs, foods, caps) {
     const out = items.map((it) => ({ ...it }));
-    const flex = out.filter((it) => it.grams === "flex");
-    if (flex.length === 0) return out;
+    const flex = out.filter((it) => it.grams === "flex" && foods[it.food]);
+    if (flex.length === 0) { out.forEach((it) => { if (it.grams === "flex") it.grams = 0; }); return out; }
 
-    // peso = carbo per grammo
-    const weights = flex.map((it) => (foods[it.food].carbs / 100) || 0.0001);
+    // peso = carbo per grammo (guardia: alimento mancante => peso minimo)
+    const weights = flex.map((it) => ((foods[it.food] ? foods[it.food].carbs : 0) / 100) || 0.0001);
     const wsum = weights.reduce((a, b) => a + b, 0);
 
     flex.forEach((it, i) => {
@@ -134,7 +134,7 @@
     const { dayType, data } = opts;
     const selection = opts.selection || {};
     const frozen = opts.frozen || {};
-    const { FOODS, BLOCKS, BLOCK_OPTIONS, TARGETS, TOLERANCE } = data;
+    const { FOODS, BLOCKS, BLOCK_OPTIONS, TARGETS, TOLERANCE, SOLVER_WEIGHTS } = data;
     const target = TARGETS[dayType];
 
     const SLOTS = ["colazione", "pranzo", "merenda", "cena"];
@@ -194,6 +194,13 @@
       ref.b.items[ref.idx] = { ...ref.b.items[ref.idx], grams: it.grams };
     });
 
+    // 4.5) AUTO-FILL del resto (proteine/grassi): aggiunge fonti mirate al
+    //      blocco merenda finché i macro rientrano (max 2 iterazioni).
+    //      Non tocca i blocchi congelati. Usa solo alimenti "non jolly".
+    if (opts.autoFill !== false) {
+      autoFillDay(blocks, target, FOODS, TOLERANCE, SOLVER_WEIGHTS);
+    }
+
     // 5) totali finali
     let totals = { ...EMPTY };
     for (const b of blocks) totals = addMacros(totals, calcMacros(b.items, FOODS));
@@ -204,16 +211,49 @@
 
     const st = status(totals, target, TOLERANCE);
 
-    // 6) se fuori tolleranza, proponi Top-3 per chiudere il gap
+    // 6) se ANCORA fuori tolleranza (caso raro/impossibile), proponi Top-3
     let suggestions = null;
     if (!st.inTarget) {
-      const gap = diffMacros(target, totals); // quanto MANCA (target - attuale)
-      suggestions = solveGap({
-        gap, data, exclude: [],
-      });
+      const gap = diffMacros(target, totals);
+      suggestions = solveGap({ gap, data, exclude: [] });
     }
 
     return { dayType, target, blocks, totals, status: st, suggestions };
+  }
+
+  // ------------------------------------------------------------
+  //  autoFillDay — chiude i gap residui aggiungendo fonti mirate
+  //  al blocco "merenda" (o al primo blocco non congelato disponibile).
+  //  Salta alimenti `jolly` (non vanno usati dal generatore).
+  // ------------------------------------------------------------
+  const SOLVER_W_DEFAULT = { protein: 3, kcal: 2, carbs: 1, fat: 1 };
+  function autoFillDay(blocks, target, foods, tol, weights) {
+    const W = weights || SOLVER_W_DEFAULT;
+    const host = blocks.find((b) => !b.frozen && b.slot === "merenda")
+      || blocks.find((b) => !b.frozen);
+    if (!host) return;
+
+    const candidates = Object.keys(foods).filter((id) => !foods[id].jolly);
+
+    for (let iter = 0; iter < 3; iter++) {
+      let totals = { ...EMPTY };
+      for (const b of blocks) totals = addMacros(totals, calcMacros(b.items, foods));
+      const st = status({
+        kcal: Math.round(totals.kcal), protein: round1(totals.protein),
+        carbs: round1(totals.carbs), fat: round1(totals.fat),
+      }, target, tol);
+      if (st.inTarget) break;
+
+      const gap = diffMacros(target, totals); // quanto manca
+      // se l'unico problema è un eccesso (gap negativi), non possiamo aggiungere: stop
+      if (gap.protein <= tol.protein && gap.fat <= tol.fat && gap.carbs <= tol.carbs && gap.kcal <= tol.kcal) break;
+
+      const top = solveGap({ gap, data: { FOODS: foods, SOLVER_WEIGHTS: W }, candidates });
+      if (!top.length || top[0].grams <= 0) break;
+      const pick = top[0];
+      const ex = host.items.find((x) => x.food === pick.food);
+      if (ex) ex.grams += pick.grams; else host.items.push({ food: pick.food, grams: pick.grams });
+    }
   }
 
   // ------------------------------------------------------------
@@ -229,6 +269,7 @@
     const W = SOLVER_WEIGHTS || { protein: 3, kcal: 2, carbs: 1, fat: 1 };
     const candidates = opts.candidates || Object.keys(FOODS);
     const exclude = new Set(opts.exclude || []);
+    const preferCat = opts.preferCat || null; // bonus per stessa categoria (sostituzioni "stessa funzione")
 
     // per ogni alimento, trova grammi g>=0 che minimizzano
     //   sum_m W[m] * (f[m]*g/100 - gap[m])^2
@@ -256,6 +297,9 @@
         const resid = (m === "protein" ? result.protein : m === "carbs" ? result.carbs : m === "fat" ? result.fat : result.kcal) - gap[m];
         score += W[m] * resid * resid;
       }
+      // bias di categoria: chi è della stessa "funzione" del cibo sostituito
+      // ottiene uno sconto di score (preferisce carbo↔carbo, prot↔prot).
+      if (preferCat && f.cat !== preferCat) score *= 2.2;
       results.push({
         food: id, label: f.label || id, cat: f.cat, grams, result,
         score: Math.round(score),
@@ -322,11 +366,26 @@
     return byCat;
   }
 
+  function plural(label, n) {
+    if (n === 1) return label;
+    // pluralizzazione italiana semplice
+    if (label.endsWith("o")) return label.slice(0, -1) + "i";
+    if (label.endsWith("a")) return label.slice(0, -1) + "e";
+    if (label.endsWith("e")) return label.slice(0, -1) + "i";
+    return label + "i";
+  }
+
   function formatAmount(food, grams, f) {
-    // prodotti a porzione: mostra il numero di pezzi
+    // prodotti a porzione (unit): mostra il numero di pezzi
     if (f.unit && f.unit.portion) {
-      const n = Math.round(grams / f.unit.portion);
-      return `${n} ${f.unit.label}${n !== 1 ? "e" : ""}`;
+      const n = Math.max(1, Math.round(grams / f.unit.portion));
+      return `${n} ${plural(f.unit.label, n)}`;
+    }
+    // prodotti venduti a confezione (pack): mostra n confezioni + grammi totali
+    if (f.pack && f.pack.size) {
+      const n = Math.max(1, Math.ceil(grams / f.pack.size));
+      const tot = grams >= 1000 ? `${(grams / 1000).toFixed(1)} kg` : `${Math.round(grams)} g`;
+      return `${n} ${plural(f.pack.label, n)} (${tot})`;
     }
     if (grams >= 1000) return `~${(grams / 1000).toFixed(1)} kg`;
     return `${Math.round(grams)} g`;
