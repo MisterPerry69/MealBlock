@@ -65,22 +65,29 @@
       <div class="pad" style="padding:14px 16px"><button class="btn ghost" id="clearChecks" style="width:100%">Azzera spunte</button></div>
     </section>
 
-    <!-- ALIMENTI -->
-    <section class="screen" id="screen-alimenti">
+    <!-- BLOCKS (blocchi + database) -->
+    <section class="screen" id="screen-blocks">
       <div class="tabs">
-        <button class="on" data-ftab="db">Database</button>
-        <button data-ftab="blocks">Blocchi</button>
+        <button class="on" data-ftab="blocks">Blocchi</button>
+        <button data-ftab="db">Database</button>
       </div>
-      <div id="ftab-db">
-        <div class="pad" style="padding:6px 16px 4px"><button class="btn primary sm" id="addFood">+ Nuovo alimento</button>
-          <button class="btn ghost sm" id="resetFoods" style="margin-left:8px">Ripristina seed</button></div>
-        <div id="foodList"></div>
-      </div>
-      <div id="ftab-blocks" hidden>
+      <div id="ftab-blocks">
         <div id="blockList"></div>
       </div>
+      <div id="ftab-db" hidden>
+        <div id="foodList" class="foodgrid"></div>
+      </div>
+    </section>
+
+    <!-- PROFILO -->
+    <section class="screen" id="screen-profilo">
+      <div class="section-title">Target macro</div>
+      <div id="profileBody"></div>
     </section>
   </main>
+
+  <!-- floating add button (solo in Database) -->
+  <button class="fab" id="fab" hidden>+</button>
 
   <!-- ============ NAV ============ -->
   <nav id="nav">
@@ -90,8 +97,10 @@
       <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M4 9 h16 M9 3 v4 M15 3 v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Settimana</button>
     <button data-screen="spesa">
       <svg viewBox="0 0 24 24" fill="none"><path d="M3 4 h2 l2.2 11 a2 2 0 0 0 2 1.6 h7.5 a2 2 0 0 0 2 -1.5 L21 8 H6.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="20" r="1.4" fill="currentColor"/><circle cx="18" cy="20" r="1.4" fill="currentColor"/></svg>Spesa</button>
-    <button data-screen="alimenti">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M7 4 v7 a2 2 0 0 0 4 0 V4 M9 4 v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 4 c-2 1 -2 6 0 8 v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Alimenti</button>
+    <button data-screen="blocks">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6" stroke="currentColor" stroke-width="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6" stroke="currentColor" stroke-width="1.8"/></svg>Blocks</button>
+    <button data-screen="profilo">
+      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.8"/><path d="M5 20 c0 -4 3.5 -6 7 -6 s7 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Profilo</button>
   </nav>
 
   <!-- ============ SHEET (modal) ============ -->

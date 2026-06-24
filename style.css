@@ -182,6 +182,84 @@ nav button.active{ color:var(--acc); }
 .badge{ font-size:9px; background:var(--acc); color:var(--accink); padding:2px 7px; border-radius:10px; font-weight:700; letter-spacing:.5px; margin-left:7px; }
 
 .empty{ text-align:center; color:var(--dim); padding:40px 20px; font-size:14px; }
+
+/* ---------- block modal (big) ---------- */
+.chiprow{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:4px; }
+.chip{ font-family:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--dim);
+  border-radius:20px; padding:7px 13px; font-size:13px; font-weight:600; }
+.chip.on{ background:var(--acc); color:var(--accink); border-color:var(--acc); }
+.fooditems{ display:flex; flex-direction:column; gap:9px; }
+.fooditem{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 13px; }
+.fi-main{ display:flex; align-items:center; gap:9px; }
+.fi-dot{ width:9px; height:9px; border-radius:50%; flex:0 0 9px; }
+.fi-name{ font-weight:600; font-size:15px; flex:1; }
+.fi-amt{ color:var(--dim); font-variant-numeric:tabular-nums; font-weight:600; }
+.fi-macros{ font-size:12px; color:var(--dim); margin:4px 0 9px 18px; font-variant-numeric:tabular-nums; }
+.fi-actions{ display:flex; gap:7px; }
+.fi-actions .btn{ flex:1; }
+.prev{ margin-top:12px; background:var(--card); border:1px solid var(--line); border-radius:11px; padding:11px 13px;
+  font-size:13px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.prev b{ color:var(--ink); }
+
+/* picklist */
+.picklist{ max-height:50vh; overflow-y:auto; margin-top:10px; display:flex; flex-direction:column; gap:4px; }
+.pickrow{ display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:inherit;
+  background:var(--card); border:1px solid var(--line); border-radius:11px; padding:11px 13px; font-size:14.5px;
+  color:var(--ink); cursor:pointer; }
+.pickrow .pr-m{ margin-left:auto; font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+
+/* ---------- food cards (database) ---------- */
+.foodgrid{ display:grid; grid-template-columns:1fr 1fr; gap:11px; padding:12px 16px 20px; }
+.foodcard{ font-family:inherit; cursor:pointer; text-align:left; background:var(--card);
+  border:1px solid var(--line); border-left:4px solid var(--cc); border-radius:16px; padding:13px 13px 11px;
+  display:flex; flex-direction:column; gap:5px; color:var(--ink); }
+.foodcard:active{ transform:scale(.98); }
+.fc-emoji{ font-size:24px; line-height:1; }
+.fc-name{ font-weight:600; font-size:14.5px; }
+.fc-macros{ display:flex; flex-wrap:wrap; gap:6px; font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.fc-macros .fc-k{ color:var(--cc); font-weight:700; }
+
+/* ---------- blocks list ---------- */
+.slot-group{ margin-bottom:6px; }
+.slot-head{ display:flex; align-items:center; gap:8px; padding:14px 18px 4px; font-size:13px; font-weight:700;
+  letter-spacing:1px; text-transform:uppercase; color:var(--dim); }
+.blockcard .bmacro{ margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:12px;
+  color:var(--dim); font-variant-numeric:tabular-nums; }
+.blockcard .bi.extra{ color:var(--acc); }
+.blockcard .bi{ display:flex; align-items:center; gap:8px; }
+
+/* ---------- profile ---------- */
+.profcard{ margin:10px 16px; background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:15px 16px; }
+.profhead{ display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+.profhead .dim{ color:var(--dim); font-size:13px; }
+.profcheck{ margin-top:11px; font-size:12px; color:var(--good); font-variant-numeric:tabular-nums; }
+.profcheck.warn{ color:var(--warn); }
+
+/* ---------- week meals (home-like) ---------- */
+.weekday{ touch-action:pan-y; }
+.weekday .wh{ display:flex; align-items:center; gap:9px; padding:11px 13px; cursor:grab; }
+.weekday .grip{ color:var(--dim); font-size:13px; letter-spacing:-2px; cursor:grab; }
+.weekday .wtype{ font-family:inherit; cursor:pointer; }
+.weekday.dragging{ opacity:.6; outline:2px solid var(--acc); }
+.weekday.droptarget{ outline:2px dashed var(--acc); }
+.wmeals{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 4px; }
+.wmeal{ display:flex; align-items:center; gap:8px; font-family:inherit; cursor:pointer; text-align:left;
+  background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:9px 11px; color:var(--ink); }
+.wmeal .wm-ic{ flex:0 0 22px; }
+.wmeal .wm-name{ flex:1; font-size:13px; }
+.wmeal .wm-k{ font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+
+/* ---------- FAB ---------- */
+.fab{ position:fixed; right:18px; bottom:calc(78px + var(--safe-b)); z-index:80; width:54px; height:54px; border-radius:50%;
+  background:var(--acc); color:var(--accink); border:none; font-size:28px; font-weight:300; cursor:pointer;
+  box-shadow:0 6px 18px rgba(0,0,0,.45); max-width:480px; }
+.fab:active{ transform:scale(.92); }
+
+/* ---------- toast ---------- */
+#toast{ position:fixed; bottom:calc(90px + var(--safe-b)); left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--ink); color:var(--bg); font-weight:600; font-size:13px; padding:10px 18px; border-radius:30px;
+  z-index:400; opacity:0; transition:.25s; pointer-events:none; max-width:80%; }
+#toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 .gapnote{ margin:0 16px 10px; background:#2a211a; border:1px solid #4a3520; border-radius:13px; padding:11px 14px;
   font-size:13px; color:#e8c9a0; display:flex; align-items:center; gap:10px; }
 .gapnote button{ margin-left:auto; }

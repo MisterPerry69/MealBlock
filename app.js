@@ -37,11 +37,15 @@
 
   let settings = LS.get("mb_settings", { onDays: SEED.DEFAULT_ON_DAYS.slice() });
 
+  // target macro editabili dal Profilo (default = seed)
+  let TARGETS = LS.get("mb_targets", null);
+  if (!TARGETS) { TARGETS = structuredClone(SEED.TARGETS); LS.set("mb_targets", TARGETS); }
+
   // data bundle passato all'engine
   function data() {
     return {
       FOODS, BLOCKS: SEED.BLOCKS, BLOCK_OPTIONS: SEED.BLOCK_OPTIONS,
-      TARGETS: SEED.TARGETS, TOLERANCE: SEED.TOLERANCE, SOLVER_WEIGHTS: SEED.SOLVER_WEIGHTS,
+      TARGETS, TOLERANCE: SEED.TOLERANCE, SOLVER_WEIGHTS: SEED.SOLVER_WEIGHTS,
     };
   }
 
@@ -64,6 +68,13 @@
     return { pranzo: pick(SEED.BLOCK_OPTIONS.pranzo), cena: pick(SEED.BLOCK_OPTIONS.cena) };
   }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  // selezione per VARIETÀ: ruota le opzioni in base all'indice del giorno,
+  // sfasando pranzo e cena così la settimana non ripete sempre lo stesso pasto.
+  function rotatedSelection(i) {
+    const L = SEED.BLOCK_OPTIONS.pranzo, D = SEED.BLOCK_OPTIONS.cena;
+    return { pranzo: L[i % L.length], cena: D[(i + 1) % D.length] };
+  }
 
   function buildDay(dayType, selection, frozenMap) {
     const gen = E.generateDay({ dayType, selection: selection || defaultSelection(), frozen: frozenMap || {}, data: data() });
@@ -161,11 +172,10 @@
     const html = SLOT_ORDER.map((slot) => {
       const b = currentDay.blocks.find((x) => x.slot === slot);
       if (!b) return "";
-      return `<div class="cell ${b.done ? "done" : ""}" data-slot="${slot}">
+      return `<div class="cell ${b.done ? "done" : ""}" data-slot="${slot}" data-open="${slot}">
         <h3><span class="micon">${SLOT_ICON[slot]}</span>${SLOT_LABEL[slot]}
           <button class="flag" data-flag="${slot}" title="Segna come fatto"></button></h3>
         <div class="foods">${b.items.map(foodLine).join("")}</div>
-        <button class="change" data-change="${slot}">Cambia / aggiusta</button>
       </div>`;
     }).join("");
     $("#mealGrid").innerHTML = html;
@@ -225,11 +235,14 @@
   // ============================================================
   function onGridClick(e) {
     const flag = e.target.closest("[data-flag]");
-    if (flag) { toggleDone(flag.dataset.flag); return; }
-    const change = e.target.closest("[data-change]");
-    if (change) { openBlockEditor(change.dataset.change); return; }
-    const food = e.target.closest(".food");
-    if (food) { const slot = food.closest(".cell").dataset.slot; openFoodAdjust(slot, food.dataset.food); }
+    if (flag) { e.stopPropagation(); toggleDone(flag.dataset.flag); return; }
+    const cell = e.target.closest("[data-open]");
+    if (cell) {
+      openBlockModal(cell.dataset.open, {
+        day: currentDay,
+        onChange: () => { recalc(); renderOggi(); },
+      });
+    }
   }
 
   function toggleDone(slot) {
@@ -254,68 +267,151 @@
     saveDay(); renderOggi();
   }
 
-  // ---- block editor (cambia opzione blocco) ----
-  function openBlockEditor(slot) {
-    const b = currentDay.blocks.find((x) => x.slot === slot);
-    const opts = SEED.BLOCK_OPTIONS[slot] || [];
-    const body = `<h3>${SLOT_LABEL[slot]}</h3><div class="hint">Scegli un'opzione o aggiusta gli alimenti.</div>
-      ${opts.map((id) => `<div class="prop ${id === b.blockId ? "best" : ""}" data-pick="${id}">
-        <div class="pt"><span class="pn">${SEED.BLOCKS[id].label}</span>${id === b.blockId ? '<span class="badge">attuale</span>' : ""}</div>
-      </div>`).join("")}
-      <label>Oppure aggiusta un alimento</label>
-      ${b.items.map((it) => `<div class="prop" data-adjust="${it.food}"><div class="pt"><span class="pn">${FOODS[it.food]?.label || it.food}</span><span class="pg">${it.grams}g ›</span></div></div>`).join("")}
-      <div class="actions"><button class="btn ghost" data-close>Chiudi</button></div>`;
-    openSheet(body, (sh) => {
+  // ============================================================
+  //  MODAL BLOCCO (grande) — tap su un blocco in Oggi/Settimana
+  //  Mostra: opzioni blocco, ogni alimento coi suoi valori, e per
+  //  ognuno: modifica grammi / sostituisci (Top-3 smart) / elimina.
+  //  `ctx` = { day, onChange }  così funziona sia per oggi che per
+  //  un giorno della settimana.
+  // ============================================================
+  function openBlockModal(slot, ctx) {
+    const day = ctx.day;
+    const b = day.blocks.find((x) => x.slot === slot);
+    if (!b) return;
+
+    const render = () => {
+      const opts = SEED.BLOCK_OPTIONS[slot] || [];
+      const bm = E.calcMacros(b.items, FOODS);
+      const body = `
+        <h3>${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</h3>
+        <div class="hint">Totale pasto: ${bm.kcal} kcal · P${Math.round(bm.protein)} C${Math.round(bm.carbs)} F${Math.round(bm.fat)}</div>
+
+        ${opts.length > 1 ? `<label>Opzione pasto</label>
+        <div class="chiprow">${opts.map((id) => `<button class="chip ${id === b.blockId ? "on" : ""}" data-pick="${id}">${SEED.BLOCKS[id].label.replace(/^.*· /, "")}</button>`).join("")}</div>` : ""}
+
+        <label>Alimenti</label>
+        <div class="fooditems">
+          ${b.items.map((it, idx) => {
+            const f = FOODS[it.food] || { label: it.food, kcal: 0, protein: 0, carbs: 0, fat: 0 };
+            const im = E.calcMacros([it], FOODS);
+            const amt = f.unit ? `${Math.round(it.grams / f.unit.portion)} ${f.unit.label}` : `${it.grams}g`;
+            return `<div class="fooditem" data-idx="${idx}">
+              <div class="fi-main">
+                <span class="fi-dot" style="background:${catColor(f.cat)}"></span>
+                <span class="fi-name">${f.label}</span>
+                <span class="fi-amt">${amt}</span>
+              </div>
+              <div class="fi-macros">${im.kcal} kcal · P${Math.round(im.protein)} C${Math.round(im.carbs)} F${Math.round(im.fat)}</div>
+              <div class="fi-actions">
+                <button class="btn ghost sm" data-edit="${idx}">Grammi</button>
+                <button class="btn ghost sm" data-sub="${idx}">Sostituisci</button>
+                <button class="btn ghost sm" data-del="${idx}">Elimina</button>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        <button class="btn ghost sm" id="addItem" style="width:100%;margin-top:8px">+ Aggiungi alimento</button>
+        <div class="actions"><button class="btn primary" data-close style="width:100%">Fatto</button></div>`;
+      openSheet(body, wire);
+    };
+
+    const commit = () => { ctx.onChange(); render(); };
+
+    const wire = (sh) => {
       $$("[data-pick]", sh).forEach((el) => el.onclick = () => {
         b.blockId = el.dataset.pick; b.label = SEED.BLOCKS[el.dataset.pick].label;
-        recalc(); closeSheet(); renderOggi();
+        b.items = E.resolveBlockItems(SEED.BLOCKS[el.dataset.pick], day.dayType);
+        // risolvi i flex con un riempimento ragionevole (default)
+        b.items = b.items.map((it) => it.grams === "flex" ? { ...it, grams: 100 } : it);
+        commit();
       });
-      $$("[data-adjust]", sh).forEach((el) => el.onclick = () => { closeSheet(); openFoodAdjust(slot, el.dataset.adjust); });
-    });
-  }
+      $$("[data-edit]", sh).forEach((el) => el.onclick = () => editGrams(+el.dataset.edit));
+      $$("[data-sub]", sh).forEach((el) => el.onclick = () => substitute(+el.dataset.sub));
+      $$("[data-del]", sh).forEach((el) => el.onclick = () => {
+        b.items.splice(+el.dataset.del, 1); commit();
+      });
+      $("#addItem", sh).onclick = () => pickFood((foodId) => { b.items.push({ food: foodId, grams: 50 }); commit(); });
+    };
 
-  // ---- food adjust + Top-3 substitution ----
-  function openFoodAdjust(slot, food) {
-    const b = currentDay.blocks.find((x) => x.slot === slot);
-    const it = b.items.find((x) => x.food === food);
-    if (!it) return;
-    const f = FOODS[food];
-    const body = `<h3>${f.label}</h3><div class="hint">${SLOT_LABEL[slot]} · cambia la grammatura</div>
-      <label>Grammi</label>
-      <input type="number" id="gInput" value="${it.grams}" min="0" step="5">
-      <div id="subSlot"></div>
-      <div class="actions">
-        <button class="btn ghost" data-close>Annulla</button>
-        <button class="btn primary" id="applyG">Applica</button>
-      </div>`;
-    openSheet(body, (sh) => {
-      const input = $("#gInput", sh);
-      const recompute = () => {
-        const tmp = b.items.map((x) => x.food === food ? { ...x, grams: +input.value || 0 } : x);
-        const target = perBlockTarget(slot);
-        const sub = E.solveSubstitution({ items: tmp, target, data: data() });
-        $("#subSlot", sh).innerHTML = renderProposals(sub.top3, "Per compensare aggiungi:");
+    // --- modifica grammi (con anteprima live dei macro del pasto) ---
+    function editGrams(idx) {
+      const it = b.items[idx];
+      const f = FOODS[it.food];
+      const body = `<h3>${f.label}</h3><div class="hint">Modifica la grammatura</div>
+        <label>Grammi</label>
+        <input type="number" id="gInput" value="${it.grams}" min="0" step="5" inputmode="numeric">
+        <div class="prev" id="gPrev"></div>
+        <div class="actions">
+          <button class="btn ghost" data-back>Indietro</button>
+          <button class="btn primary" id="applyG">Applica</button>
+        </div>`;
+      openSheet(body, (sh) => {
+        const input = $("#gInput", sh);
+        const prev = $("#gPrev", sh);
+        const update = () => {
+          const g = Math.max(0, +input.value || 0);
+          const tmp = b.items.map((x, i) => i === idx ? { ...x, grams: g } : x);
+          const m = E.calcMacros(tmp, FOODS);
+          prev.innerHTML = `Pasto: <b>${m.kcal}</b> kcal · P${Math.round(m.protein)} C${Math.round(m.carbs)} F${Math.round(m.fat)}`;
+        };
+        input.oninput = update; update();
+        input.focus();
+        $("#applyG", sh).onclick = () => { it.grams = Math.max(0, +input.value || 0); commit(); };
+        $("[data-back]", sh).onclick = render;
+      });
+    }
+
+    // --- sostituisci alimento (Top-3 smart che mantengono i macro del pasto) ---
+    function substitute(idx) {
+      const it = b.items[idx];
+      // gap = macro che l'alimento corrente apporta (per mantenere il pasto invariato)
+      const gap = E.calcMacros([it], FOODS);
+      const present = b.items.map((x) => x.food);
+      const top3 = E.solveGap({ gap, data: data(), exclude: present });
+      const body = `<h3>Sostituisci ${FOODS[it.food].label}</h3>
+        <div class="hint">Proposte che mantengono i macro del pasto. Oppure scegli liberamente.</div>
+        <div id="subProps">${renderProposals(top3, "Migliori sostituti")}</div>
+        <button class="btn ghost sm" id="freeChoice" style="width:100%;margin-top:6px">Scegli da tutti gli alimenti</button>
+        <div class="actions"><button class="btn ghost" data-back style="width:100%">Indietro</button></div>`;
+      openSheet(body, (sh) => {
         $$("[data-prop]", sh).forEach((el) => el.onclick = () => {
-          const pid = el.dataset.prop, grams = +el.dataset.grams;
-          // applica modifica grammatura + aggiungi/aggiorna l'alimento proposto
-          it.grams = +input.value || 0;
-          const ex = b.items.find((x) => x.food === pid);
-          if (ex) ex.grams += grams; else b.items.push({ food: pid, grams });
-          recalc(); closeSheet(); renderOggi();
+          b.items[idx] = { food: el.dataset.prop, grams: +el.dataset.grams }; commit();
         });
+        $("#freeChoice", sh).onclick = () => pickFood((foodId) => {
+          // mantieni circa gli stessi macro: scala i grammi per pari kcal
+          const f = FOODS[foodId];
+          const g = f.kcal > 0 ? Math.round((gap.kcal / f.kcal) * 100) : 50;
+          b.items[idx] = { food: foodId, grams: Math.max(5, g) }; commit();
+        });
+        $("[data-back]", sh).onclick = render;
+      });
+    }
+
+    render();
+  }
+
+  // selettore alimento generico (lista cercabile)
+  function pickFood(onPick) {
+    const ids = Object.keys(FOODS).sort((a, b) => (FOODS[a].label || a).localeCompare(FOODS[b].label || b));
+    const body = `<h3>Scegli un alimento</h3>
+      <input type="text" id="foodSearch" placeholder="Cerca…" autocomplete="off">
+      <div id="foodPickList" class="picklist"></div>
+      <div class="actions"><button class="btn ghost" data-close style="width:100%">Annulla</button></div>`;
+    openSheet(body, (sh) => {
+      const list = $("#foodPickList", sh), search = $("#foodSearch", sh);
+      const draw = (q = "") => {
+        list.innerHTML = ids.filter((id) => (FOODS[id].label || id).toLowerCase().includes(q.toLowerCase()))
+          .map((id) => { const f = FOODS[id];
+            return `<button class="pickrow" data-pf="${id}"><span class="fi-dot" style="background:${catColor(f.cat)}"></span>${f.label}<span class="pr-m">P${f.protein} C${f.carbs} F${f.fat}</span></button>`;
+          }).join("");
+        $$("[data-pf]", list).forEach((el) => el.onclick = () => onPick(el.dataset.pf));
       };
-      input.oninput = recompute; recompute();
-      $("#applyG", sh).onclick = () => { it.grams = +input.value || 0; recalc(); closeSheet(); renderOggi(); };
+      search.oninput = () => draw(search.value); draw();
     });
   }
 
-  // target "ideale" per un singolo blocco = quota proporzionale del giorno
-  function perBlockTarget(slot) {
-    const tgt = currentDay.gen.target;
-    // ripartizione semplice: pranzo/cena ~30% ciascuno, colazione 25%, merenda 15%
-    const share = { colazione: 0.25, pranzo: 0.30, merenda: 0.15, cena: 0.30 }[slot] || 0.25;
-    return { kcal: Math.round(tgt.kcal * share), protein: Math.round(tgt.protein * share),
-             carbs: Math.round(tgt.carbs * share), fat: Math.round(tgt.fat * share) };
+  function catColor(cat) {
+    return { protein: "var(--pro)", carb: "var(--carb)", fat: "var(--fat)", fruit: "#c6e85a", extra: "#c0a0e0" }[cat] || "var(--dim)";
   }
 
   function renderProposals(top3, title) {
@@ -370,7 +466,7 @@
     for (let i = 0; i < 7; i++) {
       const d = new Date(base); d.setDate(base.getDate() + i);
       const dt = onTypeForDate(d);
-      const day = buildDay(dt);
+      const day = buildDay(dt, rotatedSelection(i));
       day.dow = d.getDay();
       day.dateLabel = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
       days.push(day);
@@ -384,36 +480,103 @@
     $("#weekList").innerHTML = week.days.map((day, idx) => {
       const t = day.gen.totals;
       return `<div class="weekday" data-wd="${idx}">
-        <div class="wh"><span class="wname">${day.dateLabel}</span>
-          <span class="wtype ${day.dayType}">${day.dayType}</span>
-          <span class="wmacro">${t.kcal}kcal · P${Math.round(t.protein)}</span></div>
-        <div class="wbody">
+        <div class="wh" data-drag="${idx}">
+          <span class="grip">⋮⋮</span>
+          <span class="wname">${day.dateLabel}</span>
+          <button class="wtype ${day.dayType}" data-wswitch="${idx}" title="Switch ON/OFF">${day.dayType}</button>
+          <span class="wmacro">${t.kcal} · P${Math.round(t.protein)}</span>
+        </div>
+        <div class="wmeals">
           ${SLOT_ORDER.map((slot) => {
             const b = day.blocks.find((x) => x.slot === slot);
             if (!b) return "";
-            return `<div class="wmeal"><span class="ws">${SLOT_LABEL[slot]}</span>
-              <span>${b.label.replace(/^.*· /, "")}</span></div>`;
+            const m = E.calcMacros(b.items, FOODS);
+            return `<button class="wmeal" data-wmeal="${idx}:${slot}">
+              <span class="wm-ic">${SLOT_ICON[slot]}</span>
+              <span class="wm-name">${b.label.replace(/^.*· /, "")}</span>
+              <span class="wm-k">${m.kcal}</span>
+            </button>`;
           }).join("")}
-          <div class="row" style="margin-top:10px">
-            <button class="btn ghost sm" data-wswitch="${idx}">Switch ${day.dayType === "ON" ? "OFF" : "ON"}</button>
-            <button class="btn ghost sm" data-wregen="${idx}">Rigenera</button>
-          </div>
-        </div></div>`;
+        </div>
+        <div class="pad" style="padding:2px 12px 12px"><button class="btn ghost sm" data-wregen="${idx}" style="width:100%">↻ Rigenera giorno</button></div>
+      </div>`;
     }).join("");
-    $$(".weekday .wh").forEach((h) => h.onclick = () => h.parentElement.classList.toggle("open"));
     $$("[data-wswitch]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); switchWeekDay(+b.dataset.wswitch); });
     $$("[data-wregen]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); regenWeekDay(+b.dataset.wregen); });
+    $$("[data-wmeal]").forEach((b) => b.onclick = () => {
+      const [i, slot] = b.dataset.wmeal.split(":");
+      openBlockModal(slot, { day: week.days[+i], onChange: () => {
+        week.days[+i].gen = E.generateDay({ dayType: week.days[+i].dayType,
+          selection: selFromDay(week.days[+i]), frozen: frozenFromDay(week.days[+i]), data: data() });
+        saveWeek(); renderSettimana();
+      }});
+    });
+    setupWeekDrag();
+  }
+
+  function selFromDay(day) {
+    const s = {}; day.blocks.forEach((b) => { if (!b.done) s[b.slot] = b.blockId; }); return s;
+  }
+  function frozenFromDay(day) {
+    const f = {}; day.blocks.forEach((b) => { if (b.done) f[b.slot] = { blockId: b.blockId, label: b.label, items: b.items }; }); return f;
+  }
+
+  // --- drag & drop (Pointer Events: dito + mouse) per scambiare giorni ---
+  function setupWeekDrag() {
+    let dragIdx = null, ghost = null, startY = 0;
+    $$("[data-drag]").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        // non iniziare drag se tocco lo switch
+        if (e.target.closest("[data-wswitch]")) return;
+        dragIdx = +handle.dataset.drag;
+        const card = handle.closest(".weekday");
+        startY = e.clientY;
+        ghost = card; card.classList.add("dragging");
+        handle.setPointerCapture(e.pointerId);
+      });
+      handle.addEventListener("pointermove", (e) => {
+        if (dragIdx === null) return;
+        const cards = $$(".weekday");
+        const over = cards.find((c) => {
+          const r = c.getBoundingClientRect();
+          return e.clientY >= r.top && e.clientY <= r.bottom;
+        });
+        cards.forEach((c) => c.classList.toggle("droptarget", c === over && +c.dataset.wd !== dragIdx));
+      });
+      handle.addEventListener("pointerup", (e) => {
+        if (dragIdx === null) return;
+        const cards = $$(".weekday");
+        const over = cards.find((c) => {
+          const r = c.getBoundingClientRect();
+          return e.clientY >= r.top && e.clientY <= r.bottom;
+        });
+        if (over && +over.dataset.wd !== dragIdx) swapDays(dragIdx, +over.dataset.wd);
+        dragIdx = null; if (ghost) ghost.classList.remove("dragging"); renderSettimana();
+      });
+      handle.addEventListener("pointercancel", () => { dragIdx = null; renderSettimana(); });
+    });
+  }
+
+  // scambia i CONTENUTI dei due giorni (i blocchi/tipo), mantenendo le date fisse
+  function swapDays(a, b) {
+    const da = week.days[a], db = week.days[b];
+    const keep = (x) => ({ dow: x.dow, dateLabel: x.dateLabel });
+    const ka = keep(da), kb = keep(db);
+    week.days[a] = Object.assign(db, ka);
+    week.days[b] = Object.assign(da, kb);
+    saveWeek();
+    toast(`Scambiati ${ka.dateLabel.split(" ")[0]} ↔ ${kb.dateLabel.split(" ")[0]}`);
   }
 
   function switchWeekDay(idx) {
     const day = week.days[idx];
     const nt = day.dayType === "ON" ? "OFF" : "ON";
-    const fresh = buildDay(nt); fresh.dow = day.dow; fresh.dateLabel = day.dateLabel;
+    const fresh = buildDay(nt, rotatedSelection(idx)); fresh.dow = day.dow; fresh.dateLabel = day.dateLabel;
     week.days[idx] = fresh; saveWeek(); renderSettimana();
   }
   function regenWeekDay(idx) {
     const day = week.days[idx];
-    const fresh = buildDay(day.dayType); fresh.dow = day.dow; fresh.dateLabel = day.dateLabel;
+    const fresh = buildDay(day.dayType, randomSelection()); fresh.dow = day.dow; fresh.dateLabel = day.dateLabel;
     week.days[idx] = fresh; saveWeek(); renderSettimana();
   }
 
@@ -444,17 +607,31 @@
   }
 
   // ============================================================
-  //  RENDER: ALIMENTI
+  //  RENDER: DATABASE (card colorate per categoria)
   // ============================================================
+  const FOOD_EMOJI = {
+    oats: "🌾", whey: "🥤", skyr: "🍦", pollo: "🍗", tonno: "🐟", uova: "🥚",
+    mozzarella_light: "🧀", burger_vegetali: "🍔", fusilli_integrali: "🍝", couscous: "🍚",
+    corn_flakes: "🥣", fette_biscottate: "🍞", pure: "🥔", pane: "🍞", marmellata: "🍓",
+    olio_oliva: "🫒", peanut_butter: "🥜", cioccolato_74: "🍫", banana: "🍌", mela: "🍎",
+    pizza_lidl: "🍕", kinder_cereali: "🍫",
+  };
+  const CAT_EMOJI = { protein: "🥩", carb: "🌾", fat: "🫒", fruit: "🍎", extra: "🍫" };
+  function foodEmoji(id, f) { return FOOD_EMOJI[id] || CAT_EMOJI[f.cat] || "🍽️"; }
+
   function renderFoods() {
     const ids = Object.keys(FOODS).sort((a, b) => (FOODS[a].label || a).localeCompare(FOODS[b].label || b));
     $("#foodList").innerHTML = ids.map((id) => {
       const f = FOODS[id];
-      return `<div class="fitem">
-        <span class="nm">${f.label || id}</span>
-        <span class="macros">${f.kcal} · P${f.protein} C${f.carbs} F${f.fat}</span>
-        <span class="cat">${f.cat}</span>
-        <button class="edit" data-edit="${id}">✎</button></div>`;
+      const col = catColor(f.cat);
+      return `<button class="foodcard" data-edit="${id}" style="--cc:${col}">
+        <span class="fc-emoji">${foodEmoji(id, f)}</span>
+        <span class="fc-name">${f.label || id}</span>
+        <span class="fc-macros">
+          <span class="fc-k">${f.kcal}</span>
+          <span>P${f.protein}</span><span>C${f.carbs}</span><span>F${f.fat}</span>
+        </span>
+      </button>`;
     }).join("");
     $$("[data-edit]").forEach((b) => b.onclick = () => openFoodEditor(b.dataset.edit));
   }
@@ -502,21 +679,74 @@
     const locks = LS.get("mb_lockedBlocks", {});
     const html = SLOT_ORDER.map((slot) => {
       const ids = SEED.BLOCK_OPTIONS[slot] || [];
-      return ids.map((id) => {
+      const cards = ids.map((id) => {
         const b = SEED.BLOCKS[id];
-        return `<div class="blockcard"><h4>${b.label.replace(/^.*· /, "") || b.label}
-          <span class="slot">${slot}</span>
-          <button class="lock ${locks[id] ? "on" : ""}" data-lock="${id}" title="Blocca">${locks[id] ? "🔒" : "🔓"}</button></h4>
-          ${b.items.map((it) => `<div class="bi">${FOODS[it.food]?.label || it.food} · ${it.grams === "flex" ? "auto" : it.grams + "g"}</div>`).join("")}
-          ${b.onExtras ? `<div class="bi" style="color:var(--acc)">+ ON: ${b.onExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
-          ${b.offExtras ? `<div class="bi" style="color:var(--acc)">+ OFF: ${b.offExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
+        // macro indicativi (flex contati a 100g per dare un'idea)
+        const probe = b.items.map((it) => ({ food: it.food, grams: it.grams === "flex" ? 100 : it.grams }));
+        const m = E.calcMacros(probe, FOODS);
+        return `<div class="blockcard">
+          <h4>${SLOT_ICON[slot]} ${b.label.replace(/^.*· /, "") || b.label}
+            <button class="lock ${locks[id] ? "on" : ""}" data-lock="${id}" title="Blocca questo blocco">${locks[id] ? "🔒" : "🔓"}</button></h4>
+          ${b.items.map((it) => `<div class="bi"><span class="fi-dot" style="background:${catColor(FOODS[it.food]?.cat)}"></span>${FOODS[it.food]?.label || it.food} · ${it.grams === "flex" ? "auto" : it.grams + "g"}</div>`).join("")}
+          ${b.onExtras ? `<div class="bi extra">+ ON: ${b.onExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
+          ${b.offExtras ? `<div class="bi extra">+ OFF: ${b.offExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
+          <div class="bmacro">~ ${m.kcal} kcal · P${Math.round(m.protein)} C${Math.round(m.carbs)} F${Math.round(m.fat)}</div>
         </div>`;
       }).join("");
+      return `<div class="slot-group"><div class="slot-head">${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</div>${cards}</div>`;
     }).join("");
     $("#blockList").innerHTML = html;
     $$("[data-lock]").forEach((b) => b.onclick = () => {
       const l = LS.get("mb_lockedBlocks", {}); l[b.dataset.lock] = !l[b.dataset.lock]; LS.set("mb_lockedBlocks", l); renderBlocks();
     });
+  }
+
+  // ============================================================
+  //  RENDER: PROFILO — target macro editabili (4 valori per ON/OFF)
+  // ============================================================
+  function renderProfile() {
+    const card = (type) => {
+      const t = TARGETS[type];
+      const derived = t.protein * 4 + t.carbs * 4 + t.fat * 9;
+      const mismatch = Math.abs(derived - t.kcal) > 20;
+      return `<div class="profcard">
+        <div class="profhead"><span class="wtype ${type}">${type}</span> <span class="dim">target giornaliero</span></div>
+        <div class="grid2">
+          <div><label>Proteine (g)</label><input type="number" data-t="${type}" data-m="protein" value="${t.protein}"></div>
+          <div><label>Carboidrati (g)</label><input type="number" data-t="${type}" data-m="carbs" value="${t.carbs}"></div>
+        </div>
+        <div class="grid2">
+          <div><label>Grassi (g)</label><input type="number" data-t="${type}" data-m="fat" value="${t.fat}"></div>
+          <div><label>Calorie (kcal)</label><input type="number" data-t="${type}" data-m="kcal" value="${t.kcal}"></div>
+        </div>
+        <div class="profcheck ${mismatch ? "warn" : ""}">P·4 + C·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} ⚠️` : "✓"}</div>
+      </div>`;
+    };
+    $("#profileBody").innerHTML = `
+      <div class="hint pad" style="padding:0 16px 4px">Modifica i tuoi target. Le giornate verranno ricalcolate su questi valori.</div>
+      ${card("ON")}${card("OFF")}
+      <div class="pad" style="padding:6px 16px 20px"><button class="btn primary" id="saveProfile" style="width:100%">Salva target</button></div>`;
+    const refreshChecks = () => {
+      $$("#profileBody .profcard").forEach((cardEl, i) => {
+        const type = i === 0 ? "ON" : "OFF"; const t = TARGETS[type];
+        const derived = t.protein * 4 + t.carbs * 4 + t.fat * 9;
+        const mismatch = Math.abs(derived - t.kcal) > 20;
+        const chk = cardEl.querySelector(".profcheck");
+        chk.className = "profcheck" + (mismatch ? " warn" : "");
+        chk.innerHTML = `P·4 + C·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} ⚠️` : "✓"}`;
+      });
+    };
+    $$("#profileBody input").forEach((inp) => inp.oninput = () => {
+      TARGETS[inp.dataset.t][inp.dataset.m] = +inp.value || 0;
+      refreshChecks(); // aggiorna solo la riga di coerenza, mantiene il focus
+    });
+    $("#saveProfile").onclick = () => {
+      LS.set("mb_targets", TARGETS);
+      // ricalcola oggi e settimana coi nuovi target
+      if (currentDay) { recalc(); }
+      if (week) { week.days.forEach((d, i) => { const nd = buildDay(d.dayType, { pranzo: d.blocks.find(b=>b.slot==="pranzo")?.blockId, cena: d.blocks.find(b=>b.slot==="cena")?.blockId }); nd.dow = d.dow; nd.dateLabel = d.dateLabel; week.days[i] = nd; }); saveWeek(); }
+      toast("Target salvati ✓");
+    };
   }
 
   // ============================================================
@@ -531,9 +761,21 @@
   function closeSheet() { $("#sheetBg").classList.remove("open"); }
   $("#sheetBg").addEventListener("click", (e) => { if (e.target.id === "sheetBg") closeSheet(); });
 
+  // mini toast
+  let toastTO;
+  function toast(msg) {
+    let el = $("#toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(toastTO); toastTO = setTimeout(() => el.classList.remove("show"), 1800);
+  }
+
   // ============================================================
   //  NAV
   // ============================================================
+  function dbTabActive() {
+    return $("#screen-blocks").classList.contains("active") && !$("#ftab-db").hidden;
+  }
   function go(screen) {
     $$(".screen").forEach((s) => s.classList.toggle("active", s.id === "screen-" + screen));
     $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
@@ -541,7 +783,9 @@
     if (screen === "oggi") renderOggi();
     if (screen === "settimana") renderSettimana();
     if (screen === "spesa") renderSpesa();
-    if (screen === "alimenti") { renderFoods(); renderBlocks(); }
+    if (screen === "blocks") { renderBlocks(); renderFoods(); }
+    if (screen === "profilo") renderProfile();
+    $("#fab").hidden = !dbTabActive();
   }
 
   // ============================================================
@@ -553,13 +797,13 @@
     $("#regenBtn").onclick = regen;
     $("#genWeekBtn").onclick = () => { genWeek(); renderSettimana(); };
     $("#clearChecks").onclick = () => { shopChecks = {}; LS.set("mb_shopChecks", {}); renderSpesa(); };
-    $("#addFood").onclick = () => openFoodEditor(null);
-    $("#resetFoods").onclick = () => { if (confirm("Ripristinare il database iniziale? Le tue modifiche andranno perse.")) { FOODS = structuredClone(SEED.FOODS); LS.set("mb_foods", FOODS); renderFoods(); } };
+    $("#fab").onclick = () => openFoodEditor(null);
     $$("#nav button").forEach((b) => b.onclick = () => go(b.dataset.screen));
     $$("[data-ftab]").forEach((b) => b.onclick = () => {
       $$("[data-ftab]").forEach((x) => x.classList.toggle("on", x === b));
       $("#ftab-db").hidden = b.dataset.ftab !== "db";
       $("#ftab-blocks").hidden = b.dataset.ftab !== "blocks";
+      $("#fab").hidden = !dbTabActive();
     });
     go("oggi");
   }
