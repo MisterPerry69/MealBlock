@@ -15,12 +15,15 @@
     pranzo: `<svg width="22" height="22" viewBox="0 0 26 26"><path d="M6 16 q0 -7 7 -7 q7 0 7 7z" fill="#7bd88f"/><ellipse cx="13" cy="16" rx="8" ry="2" fill="#cfe7d6"/><path d="M11 9 q1 -3 2 0 M13 9 q1 -3 2 0" stroke="#cfe7d6" stroke-width="1.2" fill="none"/></svg>`,
     merenda: `<svg width="22" height="22" viewBox="0 0 26 26"><path d="M7 9 h12 l-1.5 11 a2 2 0 0 1 -2 1.8 h-5 a2 2 0 0 1 -2 -1.8z" fill="#7bb8d8"/><rect x="6" y="7" width="14" height="2.5" rx="1.2" fill="#a8d4e8"/></svg>`,
     cena: `<svg width="22" height="22" viewBox="0 0 26 26"><path d="M13 4 c5 0 8 4 8 9 c0 4 -3 8 -8 8 c-5 0 -8 -4 -8 -8 c0 -5 3 -9 8 -9z" fill="#b08d5a"/><ellipse cx="13" cy="12" rx="4.5" ry="3.5" fill="#d8b483"/></svg>`,
+    snack: `<svg width="22" height="22" viewBox="0 0 26 26"><rect x="5" y="8" width="16" height="10" rx="2.5" fill="#c0a0e0"/><rect x="7.5" y="10.5" width="2.5" height="2.5" rx="1" fill="#e8d8f5"/><rect x="11.5" y="12" width="2.5" height="2.5" rx="1" fill="#e8d8f5"/><rect x="15.5" y="10.5" width="2.5" height="2.5" rx="1" fill="#e8d8f5"/></svg>`,
   };
   const SLOT_ORDER = ["colazione", "pranzo", "merenda", "cena"];
   const SLOT_LABEL = { colazione: "Colazione", pranzo: "Pranzo", merenda: "Merenda", cena: "Cena" };
   const DAYS_IT = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
   const RING_COLOR = { protein: "var(--pro)", carbs: "var(--carb)", fat: "var(--fat)", kcal: "var(--kcal)" };
-  const RING_LABEL = { protein: "Pro", carbs: "Carb", fat: "Fat", kcal: "Kcal" };
+  const RING_LABEL = { protein: "P", carbs: "C", fat: "F", kcal: "Kcal" };
+  const RING_FULL = { protein: "Proteine", carbs: "Carbo", fat: "Fat", kcal: "Kcal" };
+  const RING_ORDER = ["carbs", "protein", "fat", "kcal"]; // C P F Kcal
 
   // ============================================================
   //  STORAGE
@@ -78,31 +81,45 @@
 
   function buildDay(dayType, selection, frozenMap) {
     const gen = E.generateDay({ dayType, selection: selection || defaultSelection(), frozen: frozenMap || {}, data: data() });
-    // marca done sui blocchi (default false, true se erano frozen passati)
+    // work snack come blocco a sé (toggle/cambiabile come gli altri)
+    const wsGen = gen.blocks.find((b) => b.blockId === "work_snack");
+    const workSnack = { slot: "snack", blockId: "work_snack", label: SEED.BLOCKS.work_snack.label,
+      items: wsGen ? wsGen.items.map((it) => ({ ...it })) : [], done: false };
     const blocks = gen.blocks
-      .filter((b) => b.blockId !== "work_snack") // worksnack gestito a parte (snackbar)
+      .filter((b) => b.blockId !== "work_snack")
       .map((b) => ({ ...b, done: !!(frozenMap && frozenMap[b.slot]) }));
-    return { dayType, blocks, gen, date: todayKey() };
+    return { dayType, blocks, workSnack, gen, date: todayKey() };
   }
 
   function todayKey() { const d = new Date(); return d.toISOString().slice(0, 10); }
 
-  // ricalcola i totali/gap/status del currentDay rispettando i blocchi done
-  function recalc() {
-    const frozen = {};
+  // ricalcola SOLO i totali/status dai blocchi attuali, SENZA rigenerare gli
+  // items (così le modifiche manuali NON vengono perse). Include il work snack.
+  function recalcTotals(day) {
+    day = day || currentDay;
+    const target = TARGETS[day.dayType];
+    let totals = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    const allBlocks = day.workSnack ? [...day.blocks, day.workSnack] : day.blocks;
+    for (const b of allBlocks) totals = E.addMacros(totals, E.calcMacros(b.items, FOODS));
+    totals = { kcal: Math.round(totals.kcal), protein: round1(totals.protein), carbs: round1(totals.carbs), fat: round1(totals.fat) };
+    day.gen = { dayType: day.dayType, target, totals, status: E.status(totals, target, SEED.TOLERANCE) };
+    saveDay();
+  }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  // RIGENERA/ridistribuisce le grammature (bottone ↻): rifà i blocchi non-done
+  // dai blocchi attualmente scelti, poi ricalcola. Le modifiche manuali si
+  // perdono SOLO qui, perché è esplicitamente richiesto dall'utente.
+  function redistribute() {
+    const frozen = {}, selection = {};
     for (const b of currentDay.blocks) {
       if (b.done) frozen[b.slot] = { blockId: b.blockId, label: b.label, items: b.items };
+      else selection[b.slot] = b.blockId;
     }
-    const selection = {};
-    for (const b of currentDay.blocks) if (!b.done) selection[b.slot] = b.blockId;
     const fresh = buildDay(currentDay.dayType, selection, frozen);
-    // mantieni l'ordine e lo stato done; sostituisci items ricalcolati per i non-done
     const map = {}; fresh.blocks.forEach((b) => (map[b.slot] = b));
-    currentDay.blocks.forEach((b) => {
-      if (!b.done && map[b.slot]) b.items = map[b.slot].items;
-    });
-    currentDay.gen = fresh.gen;
-    saveDay();
+    currentDay.blocks.forEach((b) => { if (!b.done && map[b.slot]) { b.items = map[b.slot].items; b.label = map[b.slot].label; } });
+    recalcTotals();
   }
 
   function ensureToday() {
@@ -126,37 +143,31 @@
   }
 
   function renderRings() {
-    const t = currentDay.gen.totals, st = currentDay.gen.status, tgt = currentDay.gen.target;
-    const order = ["protein", "carbs", "fat", "kcal"];
-    $("#rings").innerHTML = order.map((m) => {
-      const v = t[m], target = tgt[m];
-      const pct = Math.max(0, Math.min(1, v / target));
-      const C = 2 * Math.PI * 24; // circonferenza r=24
+    const tgt = TARGETS[currentDay.dayType];
+    // le wheel mostrano ciò che è stato MANGIATO (blocchi flaggati done)
+    const allBlocks = currentDay.workSnack ? [...currentDay.blocks, currentDay.workSnack] : currentDay.blocks;
+    let eaten = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    for (const b of allBlocks) if (b.done) eaten = E.addMacros(eaten, E.calcMacros(b.items, FOODS));
+    eaten = { kcal: Math.round(eaten.kcal), protein: Math.round(eaten.protein), carbs: Math.round(eaten.carbs), fat: Math.round(eaten.fat) };
+
+    $("#rings").innerHTML = RING_ORDER.map((m) => {
+      const v = eaten[m], target = tgt[m];
+      const pct = Math.max(0, Math.min(1, target ? v / target : 0));
+      const C = 2 * Math.PI * 24;
       const off = C * (1 - pct);
-      const stt = st[m].state;
-      const cls = stt === "over" ? "over" : stt === "under" ? "under" : "";
-      const col = stt === "over" ? "var(--warn)" : RING_COLOR[m];
-      const arrow = stt === "over" ? " ▲" : stt === "under" ? " ▾" : "";
-      const numFs = m === "kcal" ? "font-size:13px" : "";
-      return `<div class="ring ${cls}">
+      const over = v > target * 1.02;
+      const col = over ? "var(--warn)" : RING_COLOR[m];
+      const numFs = m === "kcal" ? "font-size:15px" : "";
+      return `<div class="ring ${over ? "over" : ""}">
         <div class="ringwrap">
           <svg viewBox="0 0 56 56"><circle class="track" cx="28" cy="28" r="24"/>
             <circle class="prog" cx="28" cy="28" r="24" stroke="${col}" stroke-dasharray="${C}" stroke-dashoffset="${off}"/></svg>
-          <b style="${numFs}">${Math.round(v)}</b>
+          <b style="${numFs}">${v}</b>
         </div>
-        <span class="lab">${RING_LABEL[m]}${arrow}</span>
         <span class="sub">/ ${target}${m === "kcal" ? "" : "g"}</span>
+        <span class="lab" style="color:${m === "kcal" ? "var(--dim)" : RING_COLOR[m]}">${RING_FULL[m]}</span>
       </div>`;
     }).join("");
-  }
-
-  function renderSnack() {
-    const ws = SEED.BLOCKS.work_snack;
-    const m = E.calcMacros(ws.items, FOODS);
-    const f = FOODS[ws.items[0].food];
-    const n = f.unit ? Math.round(ws.items[0].grams / f.unit.portion) : "";
-    $("#snackbar").innerHTML = `<span>Work snack · <b>${f.label}</b></span>
-      <span class="r">${n} ${f.unit ? f.unit.label : ""} · ${m.kcal} kcal</span>`;
   }
 
   function foodLine(it) {
@@ -164,20 +175,26 @@
     const label = f ? f.label : it.food;
     let amt;
     if (f && f.unit) { const n = Math.round(it.grams / f.unit.portion); amt = `${n} ${f.unit.label}`; }
-    else amt = `${it.grams}g`;
+    else amt = `${it.grams} g`;
     return `<div class="food" data-food="${it.food}"><span class="nm">${label}</span><span class="g">${amt}</span></div>`;
   }
 
+  function cellHTML(b, slot, label, icon) {
+    return `<div class="cell ${b.done ? "done" : ""}" data-slot="${slot}" data-open="${slot}">
+      <h3><span class="micon">${icon}</span>${label}
+        <button class="flag" data-flag="${slot}" title="Segna come fatto"></button></h3>
+      <div class="foods">${b.items.map(foodLine).join("")}</div>
+    </div>`;
+  }
+
+  // ordine in griglia: Colazione, Pranzo, Merenda, Work snack, Cena
   function renderGrid() {
-    const html = SLOT_ORDER.map((slot) => {
-      const b = currentDay.blocks.find((x) => x.slot === slot);
-      if (!b) return "";
-      return `<div class="cell ${b.done ? "done" : ""}" data-slot="${slot}" data-open="${slot}">
-        <h3><span class="micon">${SLOT_ICON[slot]}</span>${SLOT_LABEL[slot]}
-          <button class="flag" data-flag="${slot}" title="Segna come fatto"></button></h3>
-        <div class="foods">${b.items.map(foodLine).join("")}</div>
-      </div>`;
-    }).join("");
+    let html = "";
+    html += cellHTML(findBlock(currentDay, "colazione"), "colazione", "Colazione", SLOT_ICON.colazione);
+    html += cellHTML(findBlock(currentDay, "pranzo"), "pranzo", "Pranzo", SLOT_ICON.pranzo);
+    html += cellHTML(findBlock(currentDay, "merenda"), "merenda", "Merenda", SLOT_ICON.merenda);
+    if (currentDay.workSnack) html += cellHTML(currentDay.workSnack, "snack", "Work snack", SLOT_ICON.snack);
+    html += cellHTML(findBlock(currentDay, "cena"), "cena", "Cena", SLOT_ICON.cena);
     $("#mealGrid").innerHTML = html;
   }
 
@@ -227,7 +244,7 @@
 
   function renderOggi() {
     ensureToday();
-    renderHeader(); renderRings(); renderSnack(); renderGapNote(); renderGrid(); renderPrep();
+    renderHeader(); renderRings(); renderGapNote(); renderGrid(); renderPrep();
   }
 
   // ============================================================
@@ -240,31 +257,37 @@
     if (cell) {
       openBlockModal(cell.dataset.open, {
         day: currentDay,
-        onChange: () => { recalc(); renderOggi(); },
+        onChange: () => { recalcTotals(); renderOggi(); }, // NON rigenera: salva le modifiche
       });
     }
   }
 
+  // trova un blocco del giorno per slot, incluso il work snack
+  function findBlock(day, slot) {
+    if (slot === "snack" && day.workSnack) return day.workSnack;
+    return day.blocks.find((x) => x.slot === slot);
+  }
+
   function toggleDone(slot) {
-    const b = currentDay.blocks.find((x) => x.slot === slot);
+    const b = findBlock(currentDay, slot);
     b.done = !b.done;
-    recalc();
+    recalcTotals();
     renderOggi();
   }
 
   function switchDayType(type) {
     if (currentDay.dayType === type) return;
     currentDay.dayType = type;
-    recalc();
+    // cambia il target: ridistribuisce le grammature dei blocchi non-done
+    redistribute();
     renderOggi();
   }
 
+  // bottone ↻ : ridistribuisce/ricalcola le grammature sui blocchi attuali
   function regen() {
-    const keepDone = {};
-    currentDay.blocks.forEach((b) => { if (b.done) keepDone[b.slot] = { blockId: b.blockId, label: b.label, items: b.items }; });
-    const sel = randomSelection();
-    currentDay = buildDay(currentDay.dayType, sel, keepDone);
-    saveDay(); renderOggi();
+    redistribute();
+    renderOggi();
+    toast("Macro ridistribuiti ↻");
   }
 
   // ============================================================
@@ -352,7 +375,7 @@
           const g = Math.max(0, +input.value || 0);
           const tmp = b.items.map((x, i) => i === idx ? { ...x, grams: g } : x);
           const m = E.calcMacros(tmp, FOODS);
-          prev.innerHTML = `Pasto: <b>${m.kcal}</b> kcal · P${Math.round(m.protein)} C${Math.round(m.carbs)} F${Math.round(m.fat)}`;
+          prev.innerHTML = `<span class="prev-lab">Pasto</span> ${macroPills(m, { size: "md", showKcal: true })}`;
         };
         input.oninput = update; update();
         input.focus();
@@ -420,10 +443,11 @@
   // pillole macro colorate, ordine C / P / F (+ kcal opzionale)
   // size: "sm" | "md". showKcal mostra anche le kcal a sinistra.
   function macroPills(m, opts = {}) {
-    const k = `<span class="pill pill-k ${opts.size || ""}">${Math.round(m.kcal)} <i>kcal</i></span>`;
-    const c = `<span class="pill pill-c ${opts.size || ""}"><b>C</b>arbo ${Math.round(m.carbs)}</span>`;
-    const p = `<span class="pill pill-p ${opts.size || ""}"><b>P</b>rot ${Math.round(m.protein)}</span>`;
-    const f = `<span class="pill pill-f ${opts.size || ""}"><b>F</b>at ${Math.round(m.fat)}</span>`;
+    const s = opts.size || "";
+    const k = `<span class="pill pill-k ${s}">${Math.round(m.kcal)} <i>kcal</i></span>`;
+    const c = `<span class="pill pill-c ${s}"><b>C</b> ${Math.round(m.carbs)}</span>`;
+    const p = `<span class="pill pill-p ${s}"><b>P</b> ${Math.round(m.protein)}</span>`;
+    const f = `<span class="pill pill-f ${s}"><b>F</b> ${Math.round(m.fat)}</span>`;
     return `<span class="pills">${opts.showKcal ? k : ""}${c}${p}${f}</span>`;
   }
 
@@ -451,7 +475,7 @@
         const mer = currentDay.blocks.find((b) => b.slot === "merenda");
         const ex = mer.items.find((x) => x.food === pid);
         if (ex) ex.grams += grams; else mer.items.push({ food: pid, grams });
-        recalc(); closeSheet(); renderOggi();
+        recalcTotals(); closeSheet(); renderOggi();
       });
     });
   }
@@ -615,12 +639,12 @@
   // scambia i CONTENUTI dei due giorni (i blocchi/tipo), mantenendo le date fisse
   function swapDays(a, b) {
     const da = week.days[a], db = week.days[b];
-    const keep = (x) => ({ dow: x.dow, dateLabel: x.dateLabel });
-    const ka = keep(da), kb = keep(db);
-    week.days[a] = Object.assign(db, ka);
-    week.days[b] = Object.assign(da, kb);
+    // scambia il CONTENUTO (tipo + blocchi + workSnack + gen) tenendo fisse le date
+    const swapKeys = ["dayType", "blocks", "workSnack", "gen"];
+    swapKeys.forEach((k) => { const tmp = da[k]; da[k] = db[k]; db[k] = tmp; });
     saveWeek();
-    toast(`Scambiati ${ka.dateLabel.split(" ")[0]} ↔ ${kb.dateLabel.split(" ")[0]}`);
+    renderSettimana();
+    toast(`Scambiati ${da.dateLabel.split(" ")[0]} ↔ ${db.dateLabel.split(" ")[0]}`);
   }
 
   function switchWeekDay(idx) {
@@ -672,7 +696,7 @@
     pizza_lidl: "🍕", kinder_cereali: "🍫",
   };
   const CAT_EMOJI = { protein: "🥩", carb: "🌾", fat: "🫒", fruit: "🍎", extra: "🍫" };
-  function foodEmoji(id, f) { return FOOD_EMOJI[id] || CAT_EMOJI[f.cat] || "🍽️"; }
+  function foodEmoji(id, f) { return f.emoji || FOOD_EMOJI[id] || CAT_EMOJI[f.cat] || "🍽️"; }
 
   function renderFoods() {
     const ids = Object.keys(FOODS).sort((a, b) => (FOODS[a].label || a).localeCompare(FOODS[b].label || b));
@@ -694,7 +718,10 @@
     const cats = [["carb", "Carboidrato"], ["protein", "Proteina"], ["fat", "Grasso"], ["fruit", "Frutta"], ["extra", "Extra"]];
     const body = `<h3>${id ? "Modifica" : "Nuovo"} alimento</h3>
       <div class="hint">Valori nutrizionali per 100g.</div>
-      <label>Nome</label><input id="fLabel" value="${f.label || ""}" placeholder="es. Riso basmati">
+      <div class="grid-emoji">
+        <div><label>Emoji</label><input id="fEmoji" value="${f.emoji || ""}" placeholder="🍽️" maxlength="2" style="text-align:center;font-size:24px"></div>
+        <div><label>Nome</label><input id="fLabel" value="${f.label || ""}" placeholder="es. Riso basmati"></div>
+      </div>
       <div class="grid2">
         <div><label>Calorie (kcal)</label><input id="fKcal" type="number" inputmode="numeric" value="${f.kcal}"></div>
         <div><label>Categoria</label><select id="fCat">${cats.map(([c, l]) => `<option value="${c}" ${c === f.cat ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -716,10 +743,12 @@
         const label = $("#fLabel", sh).value.trim();
         if (!label) { $("#fLabel", sh).focus(); return; }
         const key = id || slugify(label);
+        const emoji = $("#fEmoji", sh).value.trim();
         FOODS[key] = {
           label, cat: $("#fCat", sh).value,
           kcal: +$("#fKcal", sh).value || 0, protein: +$("#fP", sh).value || 0,
           carbs: +$("#fC", sh).value || 0, fat: +$("#fF", sh).value || 0,
+          ...(emoji ? { emoji } : {}),
           ...($("#fJolly", sh).checked ? { jolly: true } : {}),
           ...(f.unit ? { unit: f.unit } : {}),
         };
@@ -789,7 +818,7 @@
         const mismatch = Math.abs(derived - t.kcal) > 20;
         const chk = cardEl.querySelector(".profcheck");
         chk.className = "profcheck" + (mismatch ? " warn" : "");
-        chk.innerHTML = `P·4 + C·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} ⚠️` : "✓"}`;
+        chk.innerHTML = `C·4 + P·4 + F·9 = <b>${derived}</b> kcal ${mismatch ? `≠ ${t.kcal} impostate ⚠️` : "✓ coerente"}`;
       });
     };
     $$("#profileBody input").forEach((inp) => inp.oninput = () => {
@@ -798,9 +827,9 @@
     });
     $("#saveProfile").onclick = () => {
       LS.set("mb_targets", TARGETS);
-      // ricalcola oggi e settimana coi nuovi target
-      if (currentDay) { recalc(); }
-      if (week) { week.days.forEach((d, i) => { const nd = buildDay(d.dayType, { pranzo: d.blocks.find(b=>b.slot==="pranzo")?.blockId, cena: d.blocks.find(b=>b.slot==="cena")?.blockId }); nd.dow = d.dow; nd.dateLabel = d.dateLabel; week.days[i] = nd; }); saveWeek(); }
+      // ricalcola oggi e settimana coi nuovi target (ridistribuendo le grammature)
+      if (currentDay) { redistribute(); }
+      if (week) { week.days.forEach((d, i) => { const nd = buildDay(d.dayType, selFromDay(d)); nd.dow = d.dow; nd.dateLabel = d.dateLabel; week.days[i] = nd; }); saveWeek(); }
       toast("Target salvati ✓");
     };
   }

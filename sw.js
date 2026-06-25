@@ -1,5 +1,5 @@
 // MealBlock service worker — offline cache
-const CACHE = "mealblock-v2";
+const CACHE = "mealblock-v3";
 const ASSETS = [
   "./", "./index.html", "./style.css", "./data.js", "./engine.js", "./app.js",
   "./manifest.webmanifest", "./icon-192.png", "./icon-512.png",

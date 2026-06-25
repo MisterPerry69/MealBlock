@@ -233,9 +233,16 @@
       || blocks.find((b) => !b.frozen);
     if (!host) return;
 
-    const candidates = Object.keys(foods).filter((id) => !foods[id].jolly);
+    // candidati: niente jolly. Se il pasto ospite è la merenda, solo cibi
+    // sensati a merenda (snackOk) — niente olio/condimenti puri.
+    const snackHost = host.slot === "merenda";
+    const candidates = Object.keys(foods).filter((id) => {
+      if (foods[id].jolly) return false;
+      if (snackHost && !foods[id].snackOk) return false;
+      return true;
+    });
 
-    for (let iter = 0; iter < 3; iter++) {
+    for (let iter = 0; iter < 6; iter++) {
       let totals = { ...EMPTY };
       for (const b of blocks) totals = addMacros(totals, calcMacros(b.items, foods));
       const st = status({
@@ -248,7 +255,15 @@
       // se l'unico problema è un eccesso (gap negativi), non possiamo aggiungere: stop
       if (gap.protein <= tol.protein && gap.fat <= tol.fat && gap.carbs <= tol.carbs && gap.kcal <= tol.kcal) break;
 
-      const top = solveGap({ gap, data: { FOODS: foods, SOLVER_WEIGHTS: W }, candidates });
+      // pesi dinamici: dai priorità ai macro ancora SOTTO target; quelli già
+      // ok/sopra pesano poco (così non bloccano l'aggiunta della fonte mancante).
+      const dynW = {
+        protein: gap.protein > tol.protein ? 3 : 0.2,
+        fat:     gap.fat     > tol.fat     ? 3 : 0.2,
+        carbs:   gap.carbs   > tol.carbs   ? 2 : 0.2,
+        kcal:    gap.kcal    > tol.kcal    ? 1 : 0.2,
+      };
+      const top = solveGap({ gap, data: { FOODS: foods, SOLVER_WEIGHTS: dynW }, candidates });
       if (!top.length || top[0].grams <= 0) break;
       const pick = top[0];
       const ex = host.items.find((x) => x.food === pick.food);

@@ -12,32 +12,32 @@
 
 const SEED_FOODS = {
   // ---- CARB ----
-  oats:              { label: "Avena",              kcal: 372, carbs: 58.7, protein: 13.5, fat: 7,   cat: "carb" },
+  oats:              { label: "Avena",              kcal: 372, carbs: 58.7, protein: 13.5, fat: 7,   cat: "carb", snackOk: true },
   fusilli_integrali: { label: "Fusilli integrali",  kcal: 344, carbs: 65,   protein: 13,   fat: 1.9, cat: "carb" },
   couscous:          { label: "Couscous",           kcal: 349, carbs: 70,   protein: 12,   fat: 1.5, cat: "carb" },
-  corn_flakes:       { label: "Corn flakes",        kcal: 370, carbs: 84,   protein: 7,    fat: 0.5, cat: "carb" },
+  corn_flakes:       { label: "Corn flakes",        kcal: 370, carbs: 84,   protein: 7,    fat: 0.5, cat: "carb", snackOk: true },
   fette_biscottate:  { label: "Fette biscottate",   kcal: 389, carbs: 70.8, protein: 11.7, fat: 4.9, cat: "carb" },
   pure:              { label: "Purè",               kcal: 65,  carbs: 11.5, protein: 2.2,  fat: 0.6, cat: "carb" },
   pane:              { label: "Pane",               kcal: 265, carbs: 49,   protein: 9,    fat: 3.2, cat: "carb" }, // standard, da ritoccare
   marmellata:        { label: "Marmellata",         kcal: 183, carbs: 44.3, protein: 0.4,  fat: 0.1, cat: "carb" },
 
   // ---- PROTEIN ----
-  whey:              { label: "Whey",               kcal: 372, carbs: 6.9,  protein: 70,   fat: 6.5, cat: "protein" },
-  skyr:              { label: "Skyr",               kcal: 64,  carbs: 4,    protein: 11,   fat: 0.2, cat: "protein" },
+  whey:              { label: "Whey",               kcal: 372, carbs: 6.9,  protein: 70,   fat: 6.5, cat: "protein", snackOk: true },
+  skyr:              { label: "Skyr",               kcal: 64,  carbs: 4,    protein: 11,   fat: 0.2, cat: "protein", snackOk: true, pack: { size: 350, label: "vasetto" } },
   pollo:             { label: "Pollo",              kcal: 99,  carbs: 0,    protein: 23,   fat: 0.8, cat: "protein" },
-  tonno:             { label: "Tonno",              kcal: 166, carbs: 0,    protein: 28,   fat: 6,   cat: "protein" },
-  uova:              { label: "Uova",               kcal: 143, carbs: 1,    protein: 13,   fat: 10,  cat: "protein" },
-  mozzarella_light:  { label: "Mozzarella light",   kcal: 206, carbs: 1.3,  protein: 25,   fat: 11.3,cat: "protein" },
+  tonno:             { label: "Tonno",              kcal: 166, carbs: 0,    protein: 28,   fat: 6,   cat: "protein", pack: { size: 80, label: "scatoletta" } },
+  uova:              { label: "Uova",               kcal: 143, carbs: 1,    protein: 13,   fat: 10,  cat: "protein", pack: { size: 60, label: "uovo" } },
+  mozzarella_light:  { label: "Mozzarella light",   kcal: 206, carbs: 1.3,  protein: 25,   fat: 11.3,cat: "protein", pack: { size: 125, label: "panetto" } },
   burger_vegetali:   { label: "Burger vegetali",    kcal: 292, carbs: 17,   protein: 27,   fat: 12,  cat: "protein" },
 
   // ---- FAT ----
   olio_oliva:        { label: "Olio d'oliva",       kcal: 884, carbs: 0,    protein: 0,    fat: 100, cat: "fat" },
-  peanut_butter:     { label: "Burro d'arachidi",   kcal: 617, carbs: 14,   protein: 25.8, fat: 49,  cat: "fat" },
-  cioccolato_74:     { label: "Cioccolato 74%",     kcal: 571, carbs: 32,   protein: 9.9,  fat: 42,  cat: "fat" },
+  peanut_butter:     { label: "Burro d'arachidi",   kcal: 617, carbs: 14,   protein: 25.8, fat: 49,  cat: "fat", snackOk: true },
+  cioccolato_74:     { label: "Cioccolato 74%",     kcal: 571, carbs: 32,   protein: 9.9,  fat: 42,  cat: "fat", snackOk: true },
 
   // ---- FRUIT ----
-  banana:            { label: "Banana",             kcal: 89,  carbs: 23,   protein: 1.1,  fat: 0.3, cat: "fruit" }, // standard, da ritoccare
-  mela:              { label: "Mela",               kcal: 52,  carbs: 14,   protein: 0.3,  fat: 0.2, cat: "fruit" }, // standard, da ritoccare
+  banana:            { label: "Banana",             kcal: 89,  carbs: 23,   protein: 1.1,  fat: 0.3, cat: "fruit", snackOk: true }, // standard, da ritoccare
+  mela:              { label: "Mela",               kcal: 52,  carbs: 14,   protein: 0.3,  fat: 0.2, cat: "fruit", snackOk: true }, // standard, da ritoccare
 
   // ---- EXTRA (prodotti a porzione) ----
   pizza_lidl:        { label: "Pizza proteica Lidl", kcal: 187, carbs: 27.1, protein: 12.9, fat: 2.3, cat: "extra",
@@ -130,6 +130,17 @@ const BLOCK_OPTIONS = {
 // default: Lun/Mer/Ven = ON
 const DEFAULT_ON_DAYS = [1, 3, 5];
 
+// limiti di frequenza settimanale per BLOCCO (quante volte può apparire in 7gg)
+const BLOCK_WEEK_LIMITS = {
+  lunch_C: 2,   // tonno max 2/sett
+  dinner_D: 1,  // pizza Lidl max 1/sett
+};
+// limiti per ALIMENTO dentro i blocchi (somma apparizioni nei pasti scelti)
+const FOOD_WEEK_LIMITS = {
+  mozzarella_light: 3, // compare in lunch_A e lunch_B → max 3 tot
+  tonno: 2,
+};
+
 // ------------------------------------------------------------
 //  Esportazione (sia come globals per <script> sia per moduli)
 // ------------------------------------------------------------
@@ -141,6 +152,8 @@ const SEED = {
   BLOCKS,
   BLOCK_OPTIONS,
   DEFAULT_ON_DAYS,
+  BLOCK_WEEK_LIMITS,
+  FOOD_WEEK_LIMITS,
 };
 
 if (typeof window !== "undefined") window.MB_SEED = SEED;
