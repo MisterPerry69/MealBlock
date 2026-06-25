@@ -31,9 +31,12 @@
         <div class="t" id="htitle">MealBlock</div>
       </div>
     </div>
-    <div class="toggle" id="dayToggle" hidden>
-      <button data-type="ON">ON</button>
-      <button data-type="OFF">OFF</button>
+    <div class="hactions">
+      <button class="icon-btn" id="regenBtn" title="Ridistribuisci macro" hidden>↻</button>
+      <div class="toggle" id="dayToggle" hidden>
+        <button data-type="ON">ON</button>
+        <button data-type="OFF">OFF</button>
+      </div>
     </div>
   </header>
 
@@ -44,7 +47,6 @@
       <div class="rings" id="rings"></div>
       <div id="gapnote-slot"></div>
       <div class="grid" id="mealGrid"></div>
-      <div class="pad" style="padding-bottom:14px"><button class="btn ghost" id="regenBtn" style="width:100%">↻ Rigenera giornata</button></div>
       <div id="prep-slot"></div>
     </section>
 
@@ -52,7 +54,8 @@
     <section class="screen" id="screen-settimana">
       <div class="section-title">La settimana</div>
       <div class="pad row" style="margin-bottom:6px">
-        <button class="btn primary" id="genWeekBtn" style="flex:1">Genera / Rigenera settimana</button>
+        <button class="btn primary" id="genWeekBtn" style="flex:1">Genera / Rigenera</button>
+        <button class="btn ghost" id="swapModeBtn" style="flex:0 0 auto">⇅ Scambia</button>
       </div>
       <div id="weekList"></div>
     </section>

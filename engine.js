@@ -18,6 +18,14 @@
   function round1(n) { return Math.round(n * 10) / 10; }
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
+  // porzione massima realistica per un alimento.
+  // priorità: campo food.softMax → default per categoria → fallback generoso.
+  const CAT_SOFTMAX = { fat: 30, protein: 300, carb: 250, fruit: 200, extra: 400 };
+  function softMax(f) {
+    if (typeof f.softMax === "number") return f.softMax;
+    return CAT_SOFTMAX[f.cat] || 400;
+  }
+
   // ------------------------------------------------------------
   //  calcMacros(items, foods)
   //  items: [{ food, grams }]  (grams numerici; "flex" => 0)
@@ -263,11 +271,20 @@
         carbs:   gap.carbs   > tol.carbs   ? 2 : 0.2,
         kcal:    gap.kcal    > tol.kcal    ? 1 : 0.2,
       };
-      const top = solveGap({ gap, data: { FOODS: foods, SOLVER_WEIGHTS: dynW }, candidates });
+      // escludi gli alimenti già al loro tetto realistico nell'host
+      const atCap = new Set(host.items.filter((it) => it.grams >= softMax(foods[it.food] || {})).map((it) => it.food));
+      const top = solveGap({ gap, data: { FOODS: foods, SOLVER_WEIGHTS: dynW }, candidates, exclude: [...atCap] });
       if (!top.length || top[0].grams <= 0) break;
       const pick = top[0];
       const ex = host.items.find((x) => x.food === pick.food);
-      if (ex) ex.grams += pick.grams; else host.items.push({ food: pick.food, grams: pick.grams });
+      if (ex) {
+        // non superare il tetto realistico sommando
+        const room = softMax(foods[pick.food]) - ex.grams;
+        if (room <= 0) break;
+        ex.grams += Math.min(pick.grams, room);
+      } else {
+        host.items.push({ food: pick.food, grams: pick.grams });
+      }
     }
   }
 
@@ -301,8 +318,10 @@
         den += W[m] * fm * fm;
       }
       if (den <= 0) continue;
-      let grams = 100 * (num / den);
-      grams = Math.round(clamp(grams, 0, 1000));
+      let ideal = 100 * (num / den);
+      // CAP realistico: porzione massima sensata per quell'alimento.
+      const cap = softMax(f);
+      let grams = Math.round(clamp(ideal, 0, cap));
       if (grams <= 0) continue;
 
       const result = calcMacros([{ food: id, grams }], FOODS);

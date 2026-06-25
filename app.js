@@ -139,6 +139,7 @@
     $("#hsub").textContent = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
     $("#htitle").innerHTML = `Oggi <em>· ${currentDay.dayType}</em>`;
     const tg = $("#dayToggle"); tg.hidden = false;
+    $("#regenBtn").hidden = false;
     $$("#dayToggle button").forEach((b) => b.classList.toggle("on", b.dataset.type === currentDay.dayType));
   }
 
@@ -203,14 +204,14 @@
     const slot = $("#gapnote-slot");
     if (st.inTarget) { slot.innerHTML = ""; return; }
     const off = [];
-    for (const m of ["protein", "carbs", "fat", "kcal"]) {
+    for (const m of ["carbs", "protein", "fat", "kcal"]) {
       if (st[m].state !== "ok") {
         const d = st[m].diff;
-        off.push(`${RING_LABEL[m]} ${d > 0 ? "+" : ""}${Math.round(d)}${m === "kcal" ? "" : "g"}`);
+        off.push(`${RING_FULL[m]} ${d > 0 ? "+" : ""}${Math.round(d)}${m === "kcal" ? "" : "g"}`);
       }
     }
-    slot.innerHTML = `<div class="gapnote"><span>Fuori target: ${off.join(", ")}</span>
-      <button class="btn primary sm" id="fixDayBtn">Proposte</button></div>`;
+    slot.innerHTML = `<div class="gapnote"><span>Con porzioni normali manca: <b>${off.join(", ")}</b></span>
+      <button class="btn primary sm" id="fixDayBtn">Aggiungi</button></div>`;
     $("#fixDayBtn").onclick = openDayFix;
   }
 
@@ -549,15 +550,25 @@
     saveWeek();
   }
 
+  let swapMode = false;
+
   function renderSettimana() {
-    if (!week) { $("#weekList").innerHTML = `<div class="empty">Nessuna settimana generata.<br>Premi "Genera settimana".</div>`; return; }
-    $("#weekList").innerHTML = week.days.map((day, idx) => {
+    if (!week) { $("#weekList").innerHTML = `<div class="empty">Nessuna settimana generata.<br>Premi "Genera settimana".</div>`; $("#swapModeBtn").hidden = true; return; }
+    $("#swapModeBtn").hidden = false;
+    $("#swapModeBtn").classList.toggle("primary", swapMode);
+    $("#swapModeBtn").classList.toggle("ghost", !swapMode);
+    $("#swapModeBtn").innerHTML = swapMode ? "✓ Fine" : "⇅ Scambia";
+
+    const list = $("#weekList");
+    list.classList.toggle("swapmode", swapMode);
+    list.innerHTML = (swapMode ? `<div class="swaphint">Trascina i giorni per scambiarli. Premi “Fine” quando hai finito.</div>` : "") +
+      week.days.map((day, idx) => {
       const t = day.gen.totals;
-      return `<div class="weekday" data-wd="${idx}">
-        <div class="wh" data-drag="${idx}">
-          <span class="grip">⋮⋮</span>
+      return `<div class="weekday ${swapMode ? "draggable" : ""}" data-wd="${idx}" ${swapMode ? `draggable="false"` : ""}>
+        <div class="wh">
+          ${swapMode ? `<span class="grip" data-drag="${idx}">⠿</span>` : ""}
           <span class="wname">${day.dateLabel}</span>
-          <button class="wtype ${day.dayType}" data-wswitch="${idx}" title="Switch ON/OFF">${day.dayType}</button>
+          <button class="wtype ${day.dayType}" data-wswitch="${idx}" title="Switch ON/OFF" ${swapMode ? "disabled" : ""}>${day.dayType}</button>
           <span class="wmacro">${t.kcal} · P${Math.round(t.protein)}</span>
         </div>
         <div class="wmeals">
@@ -565,27 +576,31 @@
             const b = day.blocks.find((x) => x.slot === slot);
             if (!b) return "";
             const m = E.calcMacros(b.items, FOODS);
-            return `<button class="wmeal" data-wmeal="${idx}:${slot}">
+            return `<button class="wmeal" data-wmeal="${idx}:${slot}" ${swapMode ? "disabled" : ""}>
               <span class="wm-ic">${SLOT_ICON[slot]}</span>
               <span class="wm-name">${b.label.replace(/^.*· /, "")}</span>
               <span class="wm-k">${m.kcal}</span>
             </button>`;
           }).join("")}
         </div>
-        <div class="pad" style="padding:2px 12px 12px"><button class="btn ghost sm" data-wregen="${idx}" style="width:100%">↻ Rigenera giorno</button></div>
+        ${swapMode ? "" : `<div class="pad" style="padding:2px 12px 12px"><button class="btn ghost sm" data-wregen="${idx}" style="width:100%">↻ Rigenera giorno</button></div>`}
       </div>`;
     }).join("");
-    $$("[data-wswitch]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); switchWeekDay(+b.dataset.wswitch); });
-    $$("[data-wregen]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); regenWeekDay(+b.dataset.wregen); });
-    $$("[data-wmeal]").forEach((b) => b.onclick = () => {
-      const [i, slot] = b.dataset.wmeal.split(":");
-      openBlockModal(slot, { day: week.days[+i], onChange: () => {
-        week.days[+i].gen = E.generateDay({ dayType: week.days[+i].dayType,
-          selection: selFromDay(week.days[+i]), frozen: frozenFromDay(week.days[+i]), data: data() });
-        saveWeek(); renderSettimana();
-      }});
-    });
-    setupWeekDrag();
+
+    if (!swapMode) {
+      $$("[data-wswitch]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); switchWeekDay(+b.dataset.wswitch); });
+      $$("[data-wregen]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); regenWeekDay(+b.dataset.wregen); });
+      $$("[data-wmeal]").forEach((b) => b.onclick = () => {
+        const [i, slot] = b.dataset.wmeal.split(":");
+        openBlockModal(slot, { day: week.days[+i], onChange: () => {
+          week.days[+i].gen = E.generateDay({ dayType: week.days[+i].dayType,
+            selection: selFromDay(week.days[+i]), frozen: frozenFromDay(week.days[+i]), data: data() });
+          saveWeek(); renderSettimana();
+        }});
+      });
+    } else {
+      setupWeekDrag();
+    }
   }
 
   function selFromDay(day) {
@@ -595,44 +610,52 @@
     const f = {}; day.blocks.forEach((b) => { if (b.done) f[b.slot] = { blockId: b.blockId, label: b.label, items: b.items }; }); return f;
   }
 
-  // --- drag & drop (Pointer Events: dito + mouse) per scambiare giorni ---
+  // --- drag & drop (solo in swap mode): la card segue il dito ---
   function setupWeekDrag() {
-    let dragIdx = null, ghost = null, moved = false;
-    // blocca il menu contestuale (long-press) sull'intera lista durante il drag
+    let dragIdx = null, card = null, startY = 0, dy = 0;
     const list = $("#weekList");
     list.addEventListener("contextmenu", (e) => { if (dragIdx !== null) e.preventDefault(); });
 
     $$("[data-drag]").forEach((handle) => {
-      handle.style.touchAction = "none"; // impedisce lo scroll/gesti del browser sul grip
+      handle.style.touchAction = "none";
       handle.addEventListener("pointerdown", (e) => {
-        if (e.target.closest("[data-wswitch]")) return;
         e.preventDefault();
-        dragIdx = +handle.dataset.drag; moved = false;
-        ghost = handle.closest(".weekday"); ghost.classList.add("dragging");
+        dragIdx = +handle.dataset.drag;
+        card = handle.closest(".weekday");
+        startY = e.clientY; dy = 0;
+        card.classList.add("dragging");
+        card.style.zIndex = "10";
         handle.setPointerCapture(e.pointerId);
       });
       handle.addEventListener("pointermove", (e) => {
         if (dragIdx === null) return;
-        e.preventDefault(); moved = true;
+        e.preventDefault();
+        dy = e.clientY - startY;
+        card.style.transform = `translateY(${dy}px) scale(1.03)`;
+        // evidenzia il bersaglio sotto il centro della card
+        const cy = card.getBoundingClientRect().top + card.offsetHeight / 2;
         const over = $$(".weekday").find((c) => {
+          if (c === card) return false;
           const r = c.getBoundingClientRect();
-          return e.clientY >= r.top && e.clientY <= r.bottom;
+          return cy >= r.top && cy <= r.bottom;
         });
-        $$(".weekday").forEach((c) => c.classList.toggle("droptarget", c === over && +c.dataset.wd !== dragIdx));
+        $$(".weekday").forEach((c) => c.classList.toggle("droptarget", c === over));
       });
       const finish = (e) => {
         if (dragIdx === null) return;
+        const cy = card.getBoundingClientRect().top + card.offsetHeight / 2;
         const over = $$(".weekday").find((c) => {
+          if (c === card) return false;
           const r = c.getBoundingClientRect();
-          return e.clientY >= r.top && e.clientY <= r.bottom;
+          return cy >= r.top && cy <= r.bottom;
         });
         const from = dragIdx; dragIdx = null;
-        if (ghost) ghost.classList.remove("dragging");
-        if (moved && over && +over.dataset.wd !== from) swapDays(from, +over.dataset.wd);
+        card.style.transform = ""; card.style.zIndex = ""; card.classList.remove("dragging");
+        if (over && +over.dataset.wd !== from) swapDays(from, +over.dataset.wd);
         else renderSettimana();
       };
       handle.addEventListener("pointerup", finish);
-      handle.addEventListener("pointercancel", () => { dragIdx = null; renderSettimana(); });
+      handle.addEventListener("pointercancel", finish);
     });
   }
 
@@ -864,8 +887,10 @@
   function go(screen) {
     $$(".screen").forEach((s) => s.classList.toggle("active", s.id === "screen-" + screen));
     $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
-    $("#dayToggle").style.visibility = screen === "oggi" ? "visible" : "hidden";
-    if (screen === "oggi") renderOggi();
+    const onOggi = screen === "oggi";
+    $("#dayToggle").style.visibility = onOggi ? "visible" : "hidden";
+    $("#regenBtn").style.visibility = onOggi ? "visible" : "hidden";
+    if (onOggi) renderOggi();
     if (screen === "settimana") renderSettimana();
     if (screen === "spesa") renderSpesa();
     if (screen === "blocks") { renderBlocks(); renderFoods(); }
@@ -880,7 +905,8 @@
     $("#mealGrid").addEventListener("click", onGridClick);
     $$("#dayToggle button").forEach((b) => b.onclick = () => switchDayType(b.dataset.type));
     $("#regenBtn").onclick = regen;
-    $("#genWeekBtn").onclick = () => { genWeek(); renderSettimana(); };
+    $("#genWeekBtn").onclick = () => { swapMode = false; genWeek(); renderSettimana(); };
+    $("#swapModeBtn").onclick = () => { swapMode = !swapMode; renderSettimana(); };
     $("#clearChecks").onclick = () => { shopChecks = {}; LS.set("mb_shopChecks", {}); renderSpesa(); };
     $("#fab").onclick = () => openFoodEditor(null);
     $$("#nav button").forEach((b) => b.onclick = () => go(b.dataset.screen));

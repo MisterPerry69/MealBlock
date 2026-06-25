@@ -30,10 +30,10 @@ const SEED_FOODS = {
   mozzarella_light:  { label: "Mozzarella light",   kcal: 206, carbs: 1.3,  protein: 25,   fat: 11.3,cat: "protein", pack: { size: 125, label: "panetto" } },
   burger_vegetali:   { label: "Burger vegetali",    kcal: 292, carbs: 17,   protein: 27,   fat: 12,  cat: "protein" },
 
-  // ---- FAT ----
-  olio_oliva:        { label: "Olio d'oliva",       kcal: 884, carbs: 0,    protein: 0,    fat: 100, cat: "fat" },
-  peanut_butter:     { label: "Burro d'arachidi",   kcal: 617, carbs: 14,   protein: 25.8, fat: 49,  cat: "fat", snackOk: true },
-  cioccolato_74:     { label: "Cioccolato 74%",     kcal: 571, carbs: 32,   protein: 9.9,  fat: 42,  cat: "fat", snackOk: true },
+  // ---- FAT ---- (softMax = porzione realistica oltre cui il solver penalizza)
+  olio_oliva:        { label: "Olio d'oliva",       kcal: 884, carbs: 0,    protein: 0,    fat: 100, cat: "fat", softMax: 15 },
+  peanut_butter:     { label: "Burro d'arachidi",   kcal: 617, carbs: 14,   protein: 25.8, fat: 49,  cat: "fat", snackOk: true, softMax: 25 },
+  cioccolato_74:     { label: "Cioccolato 74%",     kcal: 571, carbs: 32,   protein: 9.9,  fat: 42,  cat: "fat", snackOk: true, softMax: 30 },
 
   // ---- FRUIT ----
   banana:            { label: "Banana",             kcal: 89,  carbs: 23,   protein: 1.1,  fat: 0.3, cat: "fruit", snackOk: true }, // standard, da ritoccare
@@ -96,7 +96,7 @@ const BLOCKS = {
       { food: "marmellata", grams: 25 },
     ],
     onExtras:  [{ food: "corn_flakes", grams: "flex" }], // valvola carbo ON
-    offExtras: [{ food: "peanut_butter", grams: 30 }],   // grassi OFF
+    offExtras: [{ food: "peanut_butter", grams: 20 }],   // grassi OFF (entro softMax)
   },
 
   // ---- PRANZO ----
@@ -109,7 +109,7 @@ const BLOCKS = {
 
   // ---- CENA ----
   dinner_A: { label: "Cena · Pollo + Purè", slot: "cena",
-    items: [{ food: "pollo", grams: 200 }, { food: "pure", grams: "flex" }, { food: "olio_oliva", grams: 18 }] },
+    items: [{ food: "pollo", grams: 200 }, { food: "pure", grams: "flex" }, { food: "olio_oliva", grams: 15 }] },
   dinner_B: { label: "Cena · Uova + Pane", slot: "cena",
     items: [{ food: "uova", grams: 240 }, { food: "pane", grams: "flex" }] },
   dinner_C: { label: "Cena · Burger + Pane", slot: "cena",

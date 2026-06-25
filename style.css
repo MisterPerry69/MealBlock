@@ -38,6 +38,10 @@ header{
 .htitle small{ display:block; font-size:12px; letter-spacing:2.2px; text-transform:uppercase; color:var(--dim); margin-bottom:3px; }
 .htitle .t{ font-size:24px; font-weight:700; letter-spacing:-.4px; line-height:1; white-space:nowrap; }
 .htitle .t em{ font-style:normal; color:var(--acc); }
+.hactions{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.icon-btn{ width:42px; height:42px; border-radius:13px; background:var(--card); border:1px solid var(--line);
+  color:var(--ink); font-size:20px; cursor:pointer; display:grid; place-items:center; font-family:inherit; transition:.15s; }
+.icon-btn:active{ transform:rotate(-180deg) scale(.9); }
 .toggle{ background:var(--card); border:1px solid var(--line); border-radius:30px; padding:4px; display:flex; gap:2px; flex:0 0 auto; }
 .toggle button{ border:none; background:none; padding:7px 13px; border-radius:30px; font-size:12px; font-weight:700;
   color:var(--dim); cursor:pointer; transition:.18s; font-family:inherit; }
@@ -248,12 +252,18 @@ nav button.active{ color:var(--acc); }
 .profcheck b{ color:var(--ink); }
 
 /* ---------- week meals (home-like) ---------- */
-.weekday{ touch-action:pan-y; }
-.weekday .wh{ display:flex; align-items:center; gap:9px; padding:11px 13px; cursor:grab; }
-.weekday .grip{ color:var(--dim); font-size:13px; letter-spacing:-2px; cursor:grab; }
+.weekday .wh{ display:flex; align-items:center; gap:9px; padding:11px 13px; }
+.weekday .grip{ color:var(--acc); font-size:20px; cursor:grab; padding:0 4px; touch-action:none; }
 .weekday .wtype{ font-family:inherit; cursor:pointer; }
-.weekday.dragging{ opacity:.6; outline:2px solid var(--acc); }
-.weekday.droptarget{ outline:2px dashed var(--acc); }
+/* swap mode */
+#weekList.swapmode .weekday{ border-color:var(--acc); }
+#weekList.swapmode{ position:relative; }
+.swaphint{ margin:0 16px 12px; background:#16301f; border:1px solid #28482f; color:var(--acc);
+  border-radius:12px; padding:11px 14px; font-size:13px; }
+.weekday.draggable{ transition:transform .05s linear, box-shadow .2s; }
+.weekday.dragging{ box-shadow:0 14px 34px rgba(0,0,0,.55); opacity:.97; }
+.weekday.droptarget{ outline:2px dashed var(--acc); outline-offset:-2px; }
+.weekday .wtype:disabled, .wmeal:disabled{ opacity:.85; cursor:default; }
 .wmeals{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 4px; }
 .wmeal{ display:flex; align-items:center; gap:8px; font-family:inherit; cursor:pointer; text-align:left;
   background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:9px 11px; color:var(--ink); }
