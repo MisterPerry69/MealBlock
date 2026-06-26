@@ -17,7 +17,7 @@ const SEED_FOODS = {
   couscous:          { label: "Couscous",           kcal: 349, carbs: 70,   protein: 12,   fat: 1.5, cat: "carb" },
   corn_flakes:       { label: "Corn flakes",        kcal: 370, carbs: 84,   protein: 7,    fat: 0.5, cat: "carb", snackOk: true },
   fette_biscottate:  { label: "Fette biscottate",   kcal: 389, carbs: 70.8, protein: 11.7, fat: 4.9, cat: "carb" },
-  pure:              { label: "Purè",               kcal: 65,  carbs: 11.5, protein: 2.2,  fat: 0.6, cat: "carb" },
+  pure:              { label: "Purè",               kcal: 65,  carbs: 11.5, protein: 2.2,  fat: 0.6, cat: "carb", softMax: 500 },
   pane:              { label: "Pane",               kcal: 265, carbs: 49,   protein: 9,    fat: 3.2, cat: "carb" }, // standard, da ritoccare
   marmellata:        { label: "Marmellata",         kcal: 183, carbs: 44.3, protein: 0.4,  fat: 0.1, cat: "carb" },
 
@@ -69,17 +69,19 @@ const SOLVER_WEIGHTS = { protein: 3, kcal: 2, carbs: 1, fat: 1 };
 //  `default` (su breakfast/snack) = grammature base per ON/OFF.
 //  Grammature derivate dall'ottimizzazione (vedi spec §4).
 // ------------------------------------------------------------
+// Nei blocchi: { food, grams:N } = fisso; { food, range:[min,max] } = il solver
+// sceglie la grammatura entro il range (step 5g). I prodotti a porzione e i
+// condimenti restano fissi o con range stretto.
 const BLOCKS = {
   // ---- COLAZIONE ----
   breakfast: {
     label: "Colazione", slot: "colazione",
     items: [
-      { food: "oats",  grams: "flex" },   // valvola carbo
-      { food: "whey",  grams: 45 },
+      { food: "oats",  range: [60, 120] },
+      { food: "whey",  range: [30, 50] },
     ],
-    // extra opzionali aggiunti per tipo giornata
-    onExtras:  [{ food: "banana", grams: 120 }],
-    offExtras: [{ food: "cioccolato_74", grams: 20 }],
+    onExtras:  [{ food: "banana", range: [80, 150] }, { food: "peanut_butter", range: [0, 25] }],
+    offExtras: [{ food: "cioccolato_74", range: [10, 30] }, { food: "peanut_butter", range: [0, 25] }],
   },
 
   // ---- WORK SNACK (fisso quotidiano) ----
@@ -92,28 +94,28 @@ const BLOCKS = {
   snack: {
     label: "Merenda", slot: "merenda",
     items: [
-      { food: "skyr",       grams: 250 },
-      { food: "marmellata", grams: 25 },
+      { food: "skyr",       range: [200, 300] },
+      { food: "marmellata", range: [15, 30] },
     ],
-    onExtras:  [{ food: "corn_flakes", grams: "flex" }], // valvola carbo ON
-    offExtras: [{ food: "peanut_butter", grams: 20 }],   // grassi OFF (entro softMax)
+    onExtras:  [{ food: "corn_flakes", range: [20, 60] }, { food: "peanut_butter", range: [0, 25] }],
+    offExtras: [{ food: "peanut_butter", range: [10, 25] }, { food: "cioccolato_74", range: [0, 25] }],
   },
 
   // ---- PRANZO ----
   lunch_A: { label: "Pranzo · Couscous + Mozzarella", slot: "pranzo",
-    items: [{ food: "couscous", grams: "flex" }, { food: "mozzarella_light", grams: 125 }] },
+    items: [{ food: "couscous", range: [60, 160] }, { food: "mozzarella_light", range: [80, 150] }] },
   lunch_B: { label: "Pranzo · Pasta + Mozzarella", slot: "pranzo",
-    items: [{ food: "fusilli_integrali", grams: "flex" }, { food: "mozzarella_light", grams: 125 }] },
+    items: [{ food: "fusilli_integrali", range: [70, 180] }, { food: "mozzarella_light", range: [80, 150] }] },
   lunch_C: { label: "Pranzo · Pasta + Tonno", slot: "pranzo",
-    items: [{ food: "fusilli_integrali", grams: "flex" }, { food: "tonno", grams: 120 }] },
+    items: [{ food: "fusilli_integrali", range: [70, 180] }, { food: "tonno", range: [80, 160] }] },
 
   // ---- CENA ----
   dinner_A: { label: "Cena · Pollo + Purè", slot: "cena",
-    items: [{ food: "pollo", grams: 200 }, { food: "pure", grams: "flex" }, { food: "olio_oliva", grams: 15 }] },
+    items: [{ food: "pollo", range: [150, 280] }, { food: "pure", range: [150, 500] }, { food: "olio_oliva", range: [5, 15] }] },
   dinner_B: { label: "Cena · Uova + Pane", slot: "cena",
-    items: [{ food: "uova", grams: 240 }, { food: "pane", grams: "flex" }] },
+    items: [{ food: "uova", range: [120, 300] }, { food: "pane", range: [40, 120] }] },
   dinner_C: { label: "Cena · Burger + Pane", slot: "cena",
-    items: [{ food: "burger_vegetali", grams: 200 }, { food: "pane", grams: "flex" }] },
+    items: [{ food: "burger_vegetali", range: [150, 250] }, { food: "pane", range: [40, 120] }] },
   dinner_D: { label: "Cena · Pizza proteica", slot: "cena",
     items: [{ food: "pizza_lidl", grams: 390 }] },
 };

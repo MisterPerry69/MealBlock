@@ -38,16 +38,33 @@
   let FOODS = LS.get("mb_foods", null);
   if (!FOODS) { FOODS = structuredClone(SEED.FOODS); LS.set("mb_foods", FOODS); }
 
+  // blocchi: vivi (seed + tuoi). Ogni blocco ha `slot`; i tuoi hanno custom:true.
+  // `disabled:true` = escluso da varianti/generazione ma conservato.
+  let BLOCKS = LS.get("mb_blocks", null);
+  if (!BLOCKS) { BLOCKS = structuredClone(SEED.BLOCKS); LS.set("mb_blocks", BLOCKS); }
+  function saveBlocks() { LS.set("mb_blocks", BLOCKS); }
+
+  // opzioni per slot, calcolate dai blocchi vivi (escluse work_snack e i disabilitati)
+  function blockOptions(slot) {
+    return Object.keys(BLOCKS).filter((id) => BLOCKS[id].slot === slot && id !== "work_snack" && !BLOCKS[id].disabled);
+  }
+  // come sopra ma include i disabilitati (per la UI di gestione)
+  function blockOptionsAll(slot) {
+    return Object.keys(BLOCKS).filter((id) => BLOCKS[id].slot === slot && id !== "work_snack");
+  }
+
   let settings = LS.get("mb_settings", { onDays: SEED.DEFAULT_ON_DAYS.slice() });
 
   // target macro editabili dal Profilo (default = seed)
   let TARGETS = LS.get("mb_targets", null);
   if (!TARGETS) { TARGETS = structuredClone(SEED.TARGETS); LS.set("mb_targets", TARGETS); }
 
-  // data bundle passato all'engine
+  // data bundle passato all'engine — BLOCK_OPTIONS ricalcolato dai blocchi vivi
   function data() {
+    const BLOCK_OPTIONS = { colazione: blockOptions("colazione"), pranzo: blockOptions("pranzo"),
+      merenda: blockOptions("merenda"), cena: blockOptions("cena") };
     return {
-      FOODS, BLOCKS: SEED.BLOCKS, BLOCK_OPTIONS: SEED.BLOCK_OPTIONS,
+      FOODS, BLOCKS, BLOCK_OPTIONS,
       TARGETS, TOLERANCE: SEED.TOLERANCE, SOLVER_WEIGHTS: SEED.SOLVER_WEIGHTS,
     };
   }
@@ -65,17 +82,22 @@
   // ============================================================
   // selezione di default DETERMINISTICA: combinazione ottimizzata che
   // centra meglio i target (vedi spec §4). La casualità è solo per "rigenera".
-  const DEFAULT_SEL = { pranzo: "lunch_C", cena: "dinner_A" };
-  function defaultSelection() { return { ...DEFAULT_SEL }; }
+  // selezione di default: preferisce lunch_C/dinner_A se attivi, altrimenti
+  // il primo blocco disponibile per quello slot (robusto se l'utente disabilita).
+  function firstOpt(slot, preferred) {
+    const opts = blockOptions(slot);
+    return opts.includes(preferred) ? preferred : opts[0];
+  }
+  function defaultSelection() { return { pranzo: firstOpt("pranzo", "lunch_C"), cena: firstOpt("cena", "dinner_A") }; }
   function randomSelection() {
-    return { pranzo: pick(SEED.BLOCK_OPTIONS.pranzo), cena: pick(SEED.BLOCK_OPTIONS.cena) };
+    return { pranzo: pick(blockOptions("pranzo")), cena: pick(blockOptions("cena")) };
   }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   // selezione per VARIETÀ: ruota le opzioni in base all'indice del giorno,
   // sfasando pranzo e cena così la settimana non ripete sempre lo stesso pasto.
   function rotatedSelection(i) {
-    const L = SEED.BLOCK_OPTIONS.pranzo, D = SEED.BLOCK_OPTIONS.cena;
+    const L = blockOptions("pranzo"), D = blockOptions("cena");
     return { pranzo: L[i % L.length], cena: D[(i + 1) % D.length] };
   }
 
@@ -83,7 +105,7 @@
     const gen = E.generateDay({ dayType, selection: selection || defaultSelection(), frozen: frozenMap || {}, data: data() });
     // work snack come blocco a sé (toggle/cambiabile come gli altri)
     const wsGen = gen.blocks.find((b) => b.blockId === "work_snack");
-    const workSnack = { slot: "snack", blockId: "work_snack", label: SEED.BLOCKS.work_snack.label,
+    const workSnack = { slot: "snack", blockId: "work_snack", label: BLOCKS.work_snack.label,
       items: wsGen ? wsGen.items.map((it) => ({ ...it })) : [], done: false };
     const blocks = gen.blocks
       .filter((b) => b.blockId !== "work_snack")
@@ -300,18 +322,18 @@
   // ============================================================
   function openBlockModal(slot, ctx) {
     const day = ctx.day;
-    const b = day.blocks.find((x) => x.slot === slot);
+    const b = findBlock(day, slot);
     if (!b) return;
 
     const render = () => {
-      const opts = SEED.BLOCK_OPTIONS[slot] || [];
+      const opts = blockOptions(slot);
       const bm = E.calcMacros(b.items, FOODS);
       const body = `
         <h3>${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</h3>
         <div class="modal-total">${macroPills(bm, { size: "md", showKcal: true })}</div>
 
         ${opts.length > 1 ? `<label>Opzione pasto</label>
-        <div class="chiprow">${opts.map((id) => `<button class="chip ${id === b.blockId ? "on" : ""}" data-pick="${id}">${SEED.BLOCKS[id].label.replace(/^.*· /, "")}</button>`).join("")}</div>` : ""}
+        <div class="chiprow">${opts.map((id) => `<button class="chip ${id === b.blockId ? "on" : ""}" data-pick="${id}">${BLOCKS[id].label.replace(/^.*· /, "")}</button>`).join("")}</div>` : ""}
 
         <label>Alimenti</label>
         <div class="fooditems">
@@ -343,10 +365,11 @@
 
     const wire = (sh) => {
       $$("[data-pick]", sh).forEach((el) => el.onclick = () => {
-        b.blockId = el.dataset.pick; b.label = SEED.BLOCKS[el.dataset.pick].label;
-        b.items = E.resolveBlockItems(SEED.BLOCKS[el.dataset.pick], day.dayType);
-        // risolvi i flex con un riempimento ragionevole (default)
-        b.items = b.items.map((it) => it.grams === "flex" ? { ...it, grams: 100 } : it);
+        b.blockId = el.dataset.pick; b.label = BLOCKS[el.dataset.pick].label;
+        b.items = E.resolveBlockItems(BLOCKS[el.dataset.pick], day.dayType)
+          .map((it) => Array.isArray(it.range)
+            ? { food: it.food, grams: Math.round((it.range[0] + it.range[1]) / 2 / 5) * 5 }
+            : { food: it.food, grams: it.grams });
         commit();
       });
       $$("[data-edit]", sh).forEach((el) => el.onclick = () => editGrams(+el.dataset.edit));
@@ -499,14 +522,17 @@
   // ============================================================
   // sceglie le opzioni della settimana rispettando i limiti di frequenza
   // (per blocco e per alimento) e massimizzando la varietà.
-  function planWeekSelections() {
+  function planWeekSelections(dayTypes) {
     const blockLimits = SEED.BLOCK_WEEK_LIMITS || {};
     const foodLimits = SEED.FOOD_WEEK_LIMITS || {};
     const blockCount = {}, foodCount = {}, lastUsed = {};
-    const itemsOf = (id) => SEED.BLOCKS[id].items.map((x) => x.food);
+    const itemsOf = (id) => BLOCKS[id].items.map((x) => x.food);
 
-    const choose = (slot, dayIdx) => {
-      const opts = SEED.BLOCK_OPTIONS[slot] || [];
+    const choose = (slot, dayIdx, dayType) => {
+      let opts = blockOptions(slot);
+      // la pizza (dinner_D) non si genera in automatico sui giorni OFF
+      // (carbo troppo alti per il target low-carb). Resta scegliibile a mano.
+      if (dayType === "OFF") opts = opts.filter((id) => id !== "dinner_D");
       // candidati che non sforano i limiti
       let avail = opts.filter((id) => {
         if ((blockCount[id] || 0) >= (blockLimits[id] ?? 99)) return false;
@@ -530,18 +556,22 @@
     };
 
     const sels = [];
-    for (let i = 0; i < 7; i++) sels.push({ pranzo: choose("pranzo", i), cena: choose("cena", i) });
+    for (let i = 0; i < 7; i++) {
+      const dt = dayTypes ? dayTypes[i] : "ON";
+      sels.push({ pranzo: choose("pranzo", i, dt), cena: choose("cena", i, dt) });
+    }
     return sels;
   }
 
   function genWeek() {
     const days = [];
     const base = new Date();
-    const sels = planWeekSelections();
+    const dates = [], dayTypes = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); dates.push(d); dayTypes.push(onTypeForDate(d)); }
+    const sels = planWeekSelections(dayTypes);
     for (let i = 0; i < 7; i++) {
-      const d = new Date(base); d.setDate(base.getDate() + i);
-      const dt = onTypeForDate(d);
-      const day = buildDay(dt, sels[i]);
+      const d = dates[i];
+      const day = buildDay(dayTypes[i], sels[i]);
       day.dow = d.getDay();
       day.dateLabel = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
       days.push(day);
@@ -783,30 +813,149 @@
   }
   function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "food_" + Date.now(); }
 
+  // grammatura indicativa di un item per l'anteprima (midpoint del range)
+  function probeGrams(it) { return Array.isArray(it.range) ? Math.round((it.range[0] + it.range[1]) / 2) : it.grams; }
+
   function renderBlocks() {
-    const locks = LS.get("mb_lockedBlocks", {});
     const html = SLOT_ORDER.map((slot) => {
-      const ids = SEED.BLOCK_OPTIONS[slot] || [];
+      const ids = blockOptionsAll(slot);
       const cards = ids.map((id) => {
-        const b = SEED.BLOCKS[id];
-        // macro indicativi (flex contati a 100g per dare un'idea)
-        const probe = b.items.map((it) => ({ food: it.food, grams: it.grams === "flex" ? 100 : it.grams }));
+        const b = BLOCKS[id];
+        const probe = b.items.map((it) => ({ food: it.food, grams: probeGrams(it) }));
         const m = E.calcMacros(probe, FOODS);
-        return `<div class="blockcard">
-          <h4>${SLOT_ICON[slot]} ${b.label.replace(/^.*· /, "") || b.label}
-            <button class="lock ${locks[id] ? "on" : ""}" data-lock="${id}" title="Blocca questo blocco">${locks[id] ? "🔒" : "🔓"}</button></h4>
-          ${b.items.map((it) => `<div class="bi"><span class="fi-dot" style="background:${catColor(FOODS[it.food]?.cat)}"></span>${FOODS[it.food]?.label || it.food} · ${it.grams === "flex" ? "auto" : it.grams + "g"}</div>`).join("")}
+        const rng = (it) => Array.isArray(it.range) ? `${it.range[0]}–${it.range[1]}g` : `${it.grams}g`;
+        return `<div class="blockcard ${b.disabled ? "disabled" : ""}">
+          <h4>${b.label.replace(/^.*· /, "") || b.label}
+            ${b.custom ? '<span class="tag-custom">tuo</span>' : ""}
+            ${b.disabled ? '<span class="tag-off">disattivo</span>' : ""}
+            <button class="bedit" data-bedit="${id}" title="Modifica">✎</button></h4>
+          ${b.items.map((it) => `<div class="bi"><span class="fi-dot" style="background:${catColor(FOODS[it.food]?.cat)}"></span>${FOODS[it.food]?.label || it.food} · ${rng(it)}</div>`).join("")}
           ${b.onExtras ? `<div class="bi extra">+ ON: ${b.onExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
           ${b.offExtras ? `<div class="bi extra">+ OFF: ${b.offExtras.map((x) => FOODS[x.food]?.label).join(", ")}</div>` : ""}
           <div class="bmacro">${macroPills(m, { size: "sm", showKcal: true })}</div>
         </div>`;
       }).join("");
-      return `<div class="slot-group"><div class="slot-head">${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}</div>${cards}</div>`;
+      return `<div class="slot-group">
+        <div class="slot-head">${SLOT_ICON[slot]} ${SLOT_LABEL[slot]}
+          <button class="addblock" data-addblock="${slot}" title="Nuovo pasto">+</button></div>
+        ${cards || '<div class="bi" style="padding:0 16px;color:var(--dim)">Nessun pasto.</div>'}
+      </div>`;
     }).join("");
-    $("#blockList").innerHTML = html;
-    $$("[data-lock]").forEach((b) => b.onclick = () => {
-      const l = LS.get("mb_lockedBlocks", {}); l[b.dataset.lock] = !l[b.dataset.lock]; LS.set("mb_lockedBlocks", l); renderBlocks();
-    });
+    $("#blockList").innerHTML = html +
+      `<div class="pad" style="padding:14px 16px 24px"><button class="btn ghost sm" id="resetBlocks" style="width:100%">Ripristina pasti iniziali</button></div>`;
+    $$("[data-bedit]").forEach((b) => b.onclick = () => openMealEditor(b.dataset.bedit));
+    $$("[data-addblock]").forEach((b) => b.onclick = () => openMealEditor(null, b.dataset.addblock));
+    $("#resetBlocks").onclick = () => {
+      if (confirm("Ripristinare i pasti iniziali? I pasti che hai creato verranno rimossi e le modifiche ai pasti base annullate.")) {
+        BLOCKS = structuredClone(SEED.BLOCKS); saveBlocks(); renderBlocks(); toast("Pasti ripristinati");
+      }
+    };
+  }
+
+  // ============================================================
+  //  EDITOR PASTO (crea / modifica / disabilita / elimina)
+  // ============================================================
+  // range automatici per categoria (l'utente può ritoccarli)
+  const CAT_RANGE = { protein: [100, 280], carb: [60, 180], fat: [5, 30], fruit: [80, 150], extra: [100, 400] };
+  function autoRange(foodId) {
+    const f = FOODS[foodId];
+    const r = (CAT_RANGE[f && f.cat] || [50, 200]).slice();
+    if (f && f.unit && f.unit.portion) return [f.unit.portion, f.unit.portion]; // prodotto a porzione
+    return r;
+  }
+
+  function openMealEditor(id, slotForNew) {
+    const isNew = !id;
+    // copia di lavoro
+    const work = isNew
+      ? { label: "", slot: slotForNew || "pranzo", items: [], custom: true }
+      : JSON.parse(JSON.stringify(BLOCKS[id]));
+    // normalizza items a {food, range}
+    work.items = (work.items || []).map((it) => ({ food: it.food, range: Array.isArray(it.range) ? it.range.slice() : [it.grams, it.grams] }));
+
+    const slots = [["colazione", "Colazione"], ["pranzo", "Pranzo"], ["merenda", "Merenda"], ["cena", "Cena"]];
+
+    const render = () => {
+      const probe = work.items.map((it) => ({ food: it.food, grams: Math.round((it.range[0] + it.range[1]) / 2) }));
+      const m = E.calcMacros(probe, FOODS);
+      const body = `<h3>${isNew ? "Nuovo pasto" : "Modifica pasto"}</h3>
+        <div class="modal-total">${macroPills(m, { size: "md", showKcal: true })}</div>
+        <label>Nome</label><input id="mLabel" value="${(work.label || "").replace(/"/g, "&quot;")}" placeholder="es. Pranzo · Riso + Pollo">
+        <label>Fascia</label>
+        <div class="chiprow">${slots.map(([s, l]) => `<button class="chip ${work.slot === s ? "on" : ""}" data-mslot="${s}">${l}</button>`).join("")}</div>
+        <label>Alimenti</label>
+        <div class="fooditems">
+          ${work.items.length ? work.items.map((it, idx) => {
+            const f = FOODS[it.food] || { label: it.food, cat: "" };
+            return `<div class="fooditem">
+              <div class="fi-main"><span class="fi-dot" style="background:${catColor(f.cat)}"></span>
+                <span class="fi-name">${f.label}</span>
+                <span class="fi-amt">${it.range[0] === it.range[1] ? it.range[0] + "g" : it.range[0] + "–" + it.range[1] + "g"}</span></div>
+              <div class="fi-actions">
+                <button class="btn ghost sm" data-mrange="${idx}">Range</button>
+                <button class="btn ghost sm" data-mdel="${idx}">Togli</button>
+              </div>
+            </div>`;
+          }).join("") : '<div class="hint" style="margin:0">Nessun alimento. Aggiungine almeno uno.</div>'}
+        </div>
+        <button class="btn ghost sm" id="mAdd" style="width:100%;margin-top:8px">+ Aggiungi alimento</button>
+        <div class="actions">
+          ${!isNew && BLOCKS[id] && id !== "work_snack" ? `<button class="btn ghost" id="mToggle">${work.disabled ? "Riattiva" : "Disattiva"}</button>` : ""}
+          ${!isNew && BLOCKS[id] && BLOCKS[id].custom ? `<button class="btn danger" id="mDelete">Elimina</button>` : ""}
+          <button class="btn primary" id="mSave">${isNew ? "Crea" : "Salva"}</button>
+        </div>`;
+      openSheet(body, wire);
+    };
+
+    const wire = (sh) => {
+      $("#mLabel", sh).oninput = (e) => work.label = e.target.value;
+      $$("[data-mslot]", sh).forEach((el) => el.onclick = () => { work.slot = el.dataset.mslot; render(); });
+      $$("[data-mdel]", sh).forEach((el) => el.onclick = () => { work.items.splice(+el.dataset.mdel, 1); render(); });
+      $$("[data-mrange]", sh).forEach((el) => el.onclick = () => editRange(+el.dataset.mrange));
+      $("#mAdd", sh).onclick = () => pickFood((foodId) => { work.items.push({ food: foodId, range: autoRange(foodId) }); render(); });
+      const tog = $("#mToggle", sh); if (tog) tog.onclick = () => { work.disabled = !work.disabled; render(); };
+      const del = $("#mDelete", sh); if (del) del.onclick = () => {
+        if (confirm(`Eliminare "${work.label}"?`)) { delete BLOCKS[id]; saveBlocks(); closeSheet(); renderBlocks(); }
+      };
+      $("#mSave", sh).onclick = () => save();
+    };
+
+    function editRange(idx) {
+      const it = work.items[idx];
+      const f = FOODS[it.food];
+      const body = `<h3>Range · ${f.label}</h3>
+        <div class="hint">Min e max grammi che il bilanciatore può usare. (Stesso valore = grammatura fissa.)</div>
+        <div class="grid2">
+          <div><label>Min (g)</label><input id="rMin" type="number" inputmode="numeric" value="${it.range[0]}"></div>
+          <div><label>Max (g)</label><input id="rMax" type="number" inputmode="numeric" value="${it.range[1]}"></div>
+        </div>
+        <div class="actions"><button class="btn ghost" data-back>Indietro</button>
+          <button class="btn primary" id="rOk">Ok</button></div>`;
+      openSheet(body, (sh) => {
+        $("[data-back]", sh).onclick = render;
+        $("#rOk", sh).onclick = () => {
+          let lo = Math.max(0, +$("#rMin", sh).value || 0), hi = Math.max(lo, +$("#rMax", sh).value || lo);
+          it.range = [lo, hi]; render();
+        };
+      });
+    }
+
+    function save() {
+      const label = (work.label || "").trim();
+      if (!label) { toast("Dai un nome al pasto"); return; }
+      if (!work.items.length) { toast("Aggiungi almeno un alimento"); return; }
+      const key = id || ("meal_" + Date.now());
+      // converti items: range con min===max => grams fisso
+      const items = work.items.map((it) => it.range[0] === it.range[1] ? { food: it.food, grams: it.range[0] } : { food: it.food, range: it.range });
+      const prev = BLOCKS[id] || {};
+      BLOCKS[key] = { ...prev, label, slot: work.slot, items, custom: prev.custom ?? true, disabled: !!work.disabled };
+      // se è un seed modificato, segnalo come modificato (per il ripristino)
+      if (id && !prev.custom) BLOCKS[key].edited = true;
+      saveBlocks(); closeSheet(); renderBlocks();
+      toast(isNew ? "Pasto creato ✓" : "Pasto salvato ✓");
+    }
+
+    render();
   }
 
   // ============================================================

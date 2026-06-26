@@ -173,40 +173,28 @@
       blocks.push({ slot, blockId, label: block.label, items, frozen: false });
     }
 
-    // 3) macro dei blocchi congelati + dei fixed dei non-congelati
+    // 3) macro fisse (blocchi congelati + item con grammatura fissa)
     let fixedTotal = { ...EMPTY };
+    const vars = []; // variabili libere: { b, idx, food, min, max, perG{...} }
     for (const b of blocks) {
-      if (b.frozen) {
-        fixedTotal = addMacros(fixedTotal, calcMacros(b.items, FOODS));
-      } else {
-        const fixedItems = b.items.filter((it) => it.grams !== "flex");
-        fixedTotal = addMacros(fixedTotal, calcMacros(fixedItems, FOODS));
-      }
-    }
-
-    // 4) gap di carbo da coprire con le valvole flex (solo blocchi non-congelati)
-    const gapCarbs = Math.max(0, target.carbs - fixedTotal.carbs);
-
-    // raccogli tutti i flex dei blocchi non-congelati e riempili insieme
-    const flexCarry = []; // riferimenti per riscrivere dopo
-    const allFlex = [];
-    for (const b of blocks) {
-      if (b.frozen) continue;
       b.items.forEach((it, idx) => {
-        if (it.grams === "flex") { allFlex.push({ ...it }); flexCarry.push({ b, idx }); }
+        const isVar = !b.frozen && Array.isArray(it.range);
+        if (isVar) {
+          const f = FOODS[it.food] || { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+          vars.push({ b, idx, food: it.food, min: it.range[0], max: it.range[1],
+            perG: { kcal: f.kcal / 100, protein: f.protein / 100, carbs: f.carbs / 100, fat: f.fat / 100 } });
+          // inizializza al punto medio del range
+          b.items[idx] = { food: it.food, grams: roundStep((it.range[0] + it.range[1]) / 2) };
+        } else {
+          fixedTotal = addMacros(fixedTotal, calcMacros([it], FOODS));
+        }
       });
     }
-    const filled = fillFlexCarbs(allFlex, gapCarbs, FOODS);
-    filled.forEach((it, i) => {
-      const ref = flexCarry[i];
-      ref.b.items[ref.idx] = { ...ref.b.items[ref.idx], grams: it.grams };
-    });
 
-    // 4.5) AUTO-FILL del resto (proteine/grassi): aggiunge fonti mirate al
-    //      blocco merenda finché i macro rientrano (max 2 iterazioni).
-    //      Non tocca i blocchi congelati. Usa solo alimenti "non jolly".
-    if (opts.autoFill !== false) {
-      autoFillDay(blocks, target, FOODS, TOLERANCE, SOLVER_WEIGHTS);
+    // 4) SOLVER a coordinate-descent: muove ogni variabile entro [min,max]
+    //    (step 5g) per minimizzare l'errore pesato dai 4 target.
+    if (opts.autoFill !== false && vars.length) {
+      solveRanges(vars, fixedTotal, target, SOLVER_WEIGHTS || SOLVER_W_DEFAULT);
     }
 
     // 5) totali finali
@@ -219,7 +207,7 @@
 
     const st = status(totals, target, TOLERANCE);
 
-    // 6) se ANCORA fuori tolleranza (caso raro/impossibile), proponi Top-3
+    // 6) se ancora fuori tolleranza (i range non bastano), proponi Top-3
     let suggestions = null;
     if (!st.inTarget) {
       const gap = diffMacros(target, totals);
@@ -227,6 +215,57 @@
     }
 
     return { dayType, target, blocks, totals, status: st, suggestions };
+  }
+
+  function roundStep(n, step) { step = step || 5; return Math.round(n / step) * step; }
+
+  // ------------------------------------------------------------
+  //  solveRanges — coordinate descent sulle grammature variabili.
+  //  Minimizza  sum_m W[m] * ((tot_m - target_m)/scale_m)^2
+  //  provando per ogni variabile alcuni valori candidati nel range.
+  // ------------------------------------------------------------
+  function solveRanges(vars, fixedTotal, target, W) {
+    const scale = { kcal: 100, protein: 20, carbs: 30, fat: 15 }; // normalizza i macro
+    const macros = ["kcal", "protein", "carbs", "fat"];
+
+    const totalOf = () => {
+      const t = { ...fixedTotal };
+      for (const v of vars) {
+        const g = v.grams;
+        t.kcal += v.perG.kcal * g; t.protein += v.perG.protein * g;
+        t.carbs += v.perG.carbs * g; t.fat += v.perG.fat * g;
+      }
+      return t;
+    };
+    const cost = (t) => {
+      let c = 0;
+      for (const m of macros) { const d = (t[m] - target[m]) / scale[m]; c += W[m] * d * d; }
+      return c;
+    };
+
+    // init a metà range
+    for (const v of vars) v.grams = clamp(roundStep((v.min + v.max) / 2), v.min, v.max);
+
+    // coordinate descent: per ogni variabile, scegli il grammo (step 5) che
+    // minimizza il costo, tenendo fisse le altre. Ripeti fino a convergenza.
+    for (let pass = 0; pass < 12; pass++) {
+      let improved = false;
+      for (const v of vars) {
+        let best = v.grams, bestC = cost(totalOf());
+        for (let g = v.min; g <= v.max; g += 5) {
+          if (g === v.grams) continue;
+          const prev = v.grams; v.grams = g;
+          const c = cost(totalOf());
+          if (c < bestC - 1e-9) { bestC = c; best = g; improved = true; }
+          v.grams = prev;
+        }
+        v.grams = best;
+      }
+      if (!improved) break;
+    }
+
+    // scrivi i risultati nei blocchi
+    for (const v of vars) v.b.items[v.idx] = { food: v.food, grams: v.grams };
   }
 
   // ------------------------------------------------------------
