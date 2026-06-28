@@ -11,14 +11,14 @@
   --r:20px; --r2:14px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
-html,body{ height:100%; overflow:hidden; }
+html{ height:100%; }
 body{
   font-family:'Outfit',system-ui,sans-serif; background:#000; color:var(--ink);
   -webkit-font-smoothing:antialiased; display:flex; justify-content:center;
-  height:100dvh; overflow:hidden;
+  height:100dvh; max-height:100dvh; overflow:hidden;
 }
 .phone{
-  position:relative; width:100%; max-width:480px; height:100dvh;
+  position:relative; width:100%; max-width:480px; height:100%;
   background:var(--bg); display:flex; flex-direction:column; overflow:hidden;
 }
 /* grain, no glow */
@@ -273,6 +273,8 @@ nav button.active{ color:var(--acc); }
 .weekday.draggable{ transition:transform .05s linear, box-shadow .2s; }
 .weekday.dragging{ box-shadow:0 14px 34px rgba(0,0,0,.55); opacity:.97; }
 .weekday.droptarget{ outline:2px dashed var(--acc); outline-offset:-2px; }
+.weekday.today{ border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset; }
+.weekday.today .wname{ color:var(--acc); font-weight:700; }
 .weekday .wtype:disabled, .wmeal:disabled{ opacity:.85; cursor:default; }
 .wmeals{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 4px; }
 .wmeal{ display:flex; align-items:center; gap:8px; font-family:inherit; cursor:pointer; text-align:left;

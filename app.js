@@ -74,7 +74,10 @@
   let week = LS.get("mb_week", null);
   let shopChecks = LS.get("mb_shopChecks", {});
 
-  function saveDay() { LS.set("mb_currentDay", currentDay); }
+  // currentDay è (di norma) un riferimento a un giorno della settimana:
+  // salvare il giorno significa salvare la settimana. Teniamo anche una copia
+  // standalone per il caso senza settimana.
+  function saveDay() { if (week) saveWeek(); LS.set("mb_currentDay", currentDay); }
   function saveWeek() { LS.set("mb_week", week); }
 
   // ============================================================
@@ -113,7 +116,11 @@
     return { dayType, blocks, workSnack, gen, date: todayKey() };
   }
 
-  function todayKey() { const d = new Date(); return d.toISOString().slice(0, 10); }
+  // chiave data LOCALE (no UTC) per evitare slittamenti di fuso orario
+  function dateKey(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function todayKey() { return dateKey(new Date()); }
 
   // ricalcola SOLO i totali/status dai blocchi attuali, SENZA rigenerare gli
   // items (così le modifiche manuali NON vengono perse). Include il work snack.
@@ -145,9 +152,20 @@
   }
 
   function ensureToday() {
-    if (!currentDay || currentDay.date !== todayKey()) {
-      const dt = onTypeForDate(new Date());
-      currentDay = buildDay(dt);
+    const tk = todayKey();
+    // se la settimana non copre oggi, (ri)generala (sempre Lun→Dom della settimana corrente)
+    const monday = dateKey(mondayOf(new Date()));
+    if (!week || week.weekStart !== monday) genWeek();
+    // "oggi" = il giorno della settimana che corrisponde a oggi (fonte di verità unica)
+    const wd = week && week.days.find((x) => x.dateKey === tk);
+    if (wd) {
+      // collega currentDay al giorno della settimana (stesso oggetto → modifiche condivise)
+      currentDay = wd;
+      currentDay.date = tk;
+      if (!currentDay.gen) recalcTotals(currentDay);
+      saveDay();
+    } else if (!currentDay || currentDay.date !== tk) {
+      currentDay = buildDay(onTypeForDate(new Date()));
       saveDay();
     }
   }
@@ -563,20 +581,30 @@
     return sels;
   }
 
+  // lunedì della settimana che contiene `d`
+  function mondayOf(d) {
+    const m = new Date(d);
+    const dow = m.getDay(); // 0=Dom..6=Sab
+    const diff = (dow === 0 ? -6 : 1 - dow); // porta a lunedì
+    m.setDate(m.getDate() + diff); m.setHours(0, 0, 0, 0);
+    return m;
+  }
+
   function genWeek() {
     const days = [];
-    const base = new Date();
+    const monday = mondayOf(new Date());
     const dates = [], dayTypes = [];
-    for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); dates.push(d); dayTypes.push(onTypeForDate(d)); }
+    for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); dates.push(d); dayTypes.push(onTypeForDate(d)); }
     const sels = planWeekSelections(dayTypes);
     for (let i = 0; i < 7; i++) {
       const d = dates[i];
       const day = buildDay(dayTypes[i], sels[i]);
       day.dow = d.getDay();
+      day.dateKey = dateKey(d);
       day.dateLabel = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
       days.push(day);
     }
-    week = { generated: todayKey(), days };
+    week = { weekStart: dateKey(monday), generated: todayKey(), days };
     saveWeek();
   }
 
@@ -593,11 +621,13 @@
     list.classList.toggle("swapmode", swapMode);
     list.innerHTML = (swapMode ? `<div class="swaphint">Trascina i giorni per scambiarli. Premi “Fine” quando hai finito.</div>` : "") +
       week.days.map((day, idx) => {
+      if (!day.gen) recalcTotals(day);
       const t = day.gen.totals;
-      return `<div class="weekday ${swapMode ? "draggable" : ""}" data-wd="${idx}" ${swapMode ? `draggable="false"` : ""}>
+      const isToday = day.dateKey === todayKey();
+      return `<div class="weekday ${swapMode ? "draggable" : ""} ${isToday ? "today" : ""}" data-wd="${idx}" ${swapMode ? `draggable="false"` : ""}>
         <div class="wh">
           ${swapMode ? `<span class="grip" data-drag="${idx}">⠿</span>` : ""}
-          <span class="wname">${day.dateLabel}</span>
+          <span class="wname">${isToday ? "● " : ""}${day.dateLabel}</span>
           <button class="wtype ${day.dayType}" data-wswitch="${idx}" title="Switch ON/OFF" ${swapMode ? "disabled" : ""}>${day.dayType}</button>
           <span class="wmacro">${t.kcal} · P${Math.round(t.protein)}</span>
         </div>
