@@ -610,12 +610,45 @@
 
   let swapMode = false;
 
+  // genera (in memoria) la settimana SUCCESSIVA, senza toccare quella corrente
+  function buildNextWeek() {
+    const nextMon = mondayOf(new Date()); nextMon.setDate(nextMon.getDate() + 7);
+    const dates = [], dayTypes = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(nextMon); d.setDate(nextMon.getDate() + i); dates.push(d); dayTypes.push(onTypeForDate(d)); }
+    const sels = planWeekSelections(dayTypes);
+    const days = dates.map((d, i) => {
+      const day = buildDay(dayTypes[i], sels[i]);
+      day.dow = d.getDay(); day.dateKey = dateKey(d);
+      day.dateLabel = `${DAYS_IT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
+      return day;
+    });
+    return { weekStart: dateKey(nextMon), generated: todayKey(), days };
+  }
+
+  // domenica dalle 20: proponi la settimana successiva (senza sovrascrivere oggi)
+  function renderWeekProposal() {
+    const slot = $("#weekProposal"); if (!slot) return;
+    const now = new Date();
+    const isSundayEve = now.getDay() === 0 && now.getHours() >= 20;
+    const dismissed = LS.get("mb_nextWeekDismissed", null);
+    const nextMonKey = (() => { const m = mondayOf(now); m.setDate(m.getDate() + 7); return dateKey(m); })();
+    if (!isSundayEve || dismissed === nextMonKey) { slot.innerHTML = ""; return; }
+    slot.innerHTML = `<div class="proposal">
+      <div><b>Nuova settimana pronta</b><br><span class="dim">Da lunedì. Preparala stasera.</span></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary sm" id="acceptNextWeek" style="flex:1">Usa la nuova</button>
+        <button class="btn ghost sm" id="dismissNextWeek">Più tardi</button>
+      </div></div>`;
+    $("#acceptNextWeek").onclick = () => { week = buildNextWeek(); saveWeek(); ensureToday(); renderSettimana(); toast("Settimana aggiornata ✓"); };
+    $("#dismissNextWeek").onclick = () => { LS.set("mb_nextWeekDismissed", nextMonKey); renderWeekProposal(); };
+  }
+
   function renderSettimana() {
-    if (!week) { $("#weekList").innerHTML = `<div class="empty">Nessuna settimana generata.<br>Premi "Genera settimana".</div>`; $("#swapModeBtn").hidden = true; return; }
+    renderWeekProposal();
+    if (!week) { $("#weekList").innerHTML = `<div class="empty">Nessuna settimana.<br>Premi ↻ per generarla.</div>`; $("#swapModeBtn").hidden = true; return; }
     $("#swapModeBtn").hidden = false;
-    $("#swapModeBtn").classList.toggle("primary", swapMode);
-    $("#swapModeBtn").classList.toggle("ghost", !swapMode);
-    $("#swapModeBtn").innerHTML = swapMode ? "✓ Fine" : "⇅ Scambia";
+    $("#swapModeBtn").classList.toggle("active-btn", swapMode);
+    $("#swapModeBtn").innerHTML = swapMode ? "✓" : "⇅";
 
     const list = $("#weekList");
     list.classList.toggle("swapmode", swapMode);
@@ -786,10 +819,11 @@
     $("#foodList").innerHTML = ids.map((id) => {
       const f = FOODS[id];
       const col = catColor(f.cat);
+      const qty = f.kind === "fisso" ? `${f.fixed}g fissi` : (Array.isArray(f.range) ? `${f.range[0]}–${f.range[1]}g` : "");
       return `<button class="foodcard" data-edit="${id}" style="--cc:${col}">
         <span class="fc-top"><span class="fc-emoji">${foodEmoji(id, f)}</span>${f.jolly ? '<span class="jolly-tag">jolly</span>' : ""}</span>
         <span class="fc-name">${f.label || id}</span>
-        <span class="fc-sub">${f.kcal} kcal · 100g</span>
+        <span class="fc-sub">${f.kcal} kcal/100g · ${qty}</span>
         ${macroPills(f, { size: "sm" })}
       </button>`;
     }).join("");
@@ -797,8 +831,19 @@
   }
 
   function openFoodEditor(id) {
-    const f = id ? FOODS[id] : { label: "", kcal: 0, carbs: 0, protein: 0, fat: 0, cat: "carb" };
+    const f = id ? FOODS[id] : { label: "", kcal: 0, carbs: 0, protein: 0, fat: 0, cat: "carb", kind: "sfuso", range: [50, 200] };
     const cats = [["carb", "Carboidrato"], ["protein", "Proteina"], ["fat", "Grasso"], ["fruit", "Frutta"], ["extra", "Extra"]];
+    const kind = f.kind || "sfuso";
+    const range = Array.isArray(f.range) ? f.range : [50, 200];
+    const fixed = typeof f.fixed === "number" ? f.fixed : 100;
+
+    const qtyFields = (k) => k === "fisso"
+      ? `<label>Grammatura fissa (g) <span class="dim">— quantità sempre uguale</span></label>
+         <input id="fFixed" type="number" inputmode="numeric" value="${fixed}">`
+      : `<label>Range (g) <span class="dim">— min/max che il bilanciatore può usare</span></label>
+         <div class="grid2"><input id="fMin" type="number" inputmode="numeric" value="${range[0]}" placeholder="min">
+         <input id="fMax" type="number" inputmode="numeric" value="${range[1]}" placeholder="max"></div>`;
+
     const body = `<h3>${id ? "Modifica" : "Nuovo"} alimento</h3>
       <div class="hint">Valori nutrizionali per 100g.</div>
       <div class="grid-emoji">
@@ -814,6 +859,12 @@
         <div><label>Prot (g)</label><input id="fP" type="number" step="0.1" inputmode="decimal" value="${f.protein}"></div>
         <div><label>Fat (g)</label><input id="fF" type="number" step="0.1" inputmode="decimal" value="${f.fat}"></div>
       </div>
+      <label>Tipo quantità</label>
+      <div class="chiprow">
+        <button class="chip ${kind === "sfuso" ? "on" : ""}" data-kind="sfuso">Sfuso (range)</button>
+        <button class="chip ${kind === "fisso" ? "on" : ""}" data-kind="fisso">Fisso (grammatura)</button>
+      </div>
+      <div id="qtyBox">${qtyFields(kind)}</div>
       <label class="check"><input type="checkbox" id="fJolly" ${f.jolly ? "checked" : ""}>
         <span><b>Jolly</b> — non usarlo nelle giornate generate (lo aggiungo io quando voglio)</span></label>
       <div class="actions">
@@ -822,19 +873,28 @@
         <button class="btn primary" id="saveFood">Salva</button>
       </div>`;
     openSheet(body, (sh) => {
+      let curKind = kind;
+      $$("[data-kind]", sh).forEach((el) => el.onclick = () => {
+        curKind = el.dataset.kind;
+        $$("[data-kind]", sh).forEach((x) => x.classList.toggle("on", x === el));
+        $("#qtyBox", sh).innerHTML = qtyFields(curKind);
+      });
       $("#saveFood", sh).onclick = () => {
         const label = $("#fLabel", sh).value.trim();
         if (!label) { $("#fLabel", sh).focus(); return; }
         const key = id || slugify(label);
         const emoji = $("#fEmoji", sh).value.trim();
-        FOODS[key] = {
-          label, cat: $("#fCat", sh).value,
+        const out = {
+          label, cat: $("#fCat", sh).value, kind: curKind,
           kcal: +$("#fKcal", sh).value || 0, protein: +$("#fP", sh).value || 0,
           carbs: +$("#fC", sh).value || 0, fat: +$("#fF", sh).value || 0,
           ...(emoji ? { emoji } : {}),
           ...($("#fJolly", sh).checked ? { jolly: true } : {}),
-          ...(f.unit ? { unit: f.unit } : {}),
+          ...(f.unit ? { unit: f.unit } : {}), ...(f.pack ? { pack: f.pack } : {}),
         };
+        if (curKind === "fisso") out.fixed = Math.max(0, +$("#fFixed", sh).value || 0);
+        else { let lo = Math.max(0, +$("#fMin", sh).value || 0), hi = Math.max(lo, +$("#fMax", sh).value || lo); out.range = [lo, hi]; }
+        FOODS[key] = out;
         LS.set("mb_foods", FOODS); closeSheet(); renderFoods();
       };
       const del = $("#delFood", sh);
@@ -843,17 +903,26 @@
   }
   function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "food_" + Date.now(); }
 
-  // grammatura indicativa di un item per l'anteprima (midpoint del range)
-  function probeGrams(it) { return Array.isArray(it.range) ? Math.round((it.range[0] + it.range[1]) / 2) : it.grams; }
+  // grammatura/quantità indicativa di un alimento, derivata dall'ALIMENTO
+  function probeFoodGrams(foodId) {
+    const f = FOODS[foodId]; if (!f) return 0;
+    if (f.kind === "fisso") return typeof f.fixed === "number" ? f.fixed : 0;
+    return Array.isArray(f.range) ? Math.round((f.range[0] + f.range[1]) / 2) : 100;
+  }
+  function foodQtyLabel(foodId) {
+    const f = FOODS[foodId]; if (!f) return "";
+    if (f.kind === "fisso") return `${f.fixed}g`;
+    return Array.isArray(f.range) ? `${f.range[0]}–${f.range[1]}g` : "auto";
+  }
 
   function renderBlocks() {
     const html = SLOT_ORDER.map((slot) => {
       const ids = blockOptionsAll(slot);
       const cards = ids.map((id) => {
         const b = BLOCKS[id];
-        const probe = b.items.map((it) => ({ food: it.food, grams: probeGrams(it) }));
+        const probe = b.items.map((it) => ({ food: it.food, grams: probeFoodGrams(it.food) }));
         const m = E.calcMacros(probe, FOODS);
-        const rng = (it) => Array.isArray(it.range) ? `${it.range[0]}–${it.range[1]}g` : `${it.grams}g`;
+        const rng = (it) => foodQtyLabel(it.food);
         return `<div class="blockcard ${b.disabled ? "disabled" : ""}">
           <h4>${b.label.replace(/^.*· /, "") || b.label}
             ${b.custom ? '<span class="tag-custom">tuo</span>' : ""}
@@ -884,46 +953,36 @@
 
   // ============================================================
   //  EDITOR PASTO (crea / modifica / disabilita / elimina)
+  //  Un pasto è solo: nome + fascia + lista alimenti. Le quantità
+  //  (range/grammatura) vivono SULL'alimento (modificabili in Database).
   // ============================================================
-  // range automatici per categoria (l'utente può ritoccarli)
-  const CAT_RANGE = { protein: [100, 280], carb: [60, 180], fat: [5, 30], fruit: [80, 150], extra: [100, 400] };
-  function autoRange(foodId) {
-    const f = FOODS[foodId];
-    const r = (CAT_RANGE[f && f.cat] || [50, 200]).slice();
-    if (f && f.unit && f.unit.portion) return [f.unit.portion, f.unit.portion]; // prodotto a porzione
-    return r;
-  }
-
   function openMealEditor(id, slotForNew) {
     const isNew = !id;
-    // copia di lavoro
     const work = isNew
       ? { label: "", slot: slotForNew || "pranzo", items: [], custom: true }
       : JSON.parse(JSON.stringify(BLOCKS[id]));
-    // normalizza items a {food, range}
-    work.items = (work.items || []).map((it) => ({ food: it.food, range: Array.isArray(it.range) ? it.range.slice() : [it.grams, it.grams] }));
+    work.items = (work.items || []).map((it) => ({ food: it.food }));
 
     const slots = [["colazione", "Colazione"], ["pranzo", "Pranzo"], ["merenda", "Merenda"], ["cena", "Cena"]];
 
     const render = () => {
-      const probe = work.items.map((it) => ({ food: it.food, grams: Math.round((it.range[0] + it.range[1]) / 2) }));
+      const probe = work.items.map((it) => ({ food: it.food, grams: probeFoodGrams(it.food) }));
       const m = E.calcMacros(probe, FOODS);
       const body = `<h3>${isNew ? "Nuovo pasto" : "Modifica pasto"}</h3>
         <div class="modal-total">${macroPills(m, { size: "md", showKcal: true })}</div>
         <label>Nome</label><input id="mLabel" value="${(work.label || "").replace(/"/g, "&quot;")}" placeholder="es. Pranzo · Riso + Pollo">
         <label>Fascia</label>
         <div class="chiprow">${slots.map(([s, l]) => `<button class="chip ${work.slot === s ? "on" : ""}" data-mslot="${s}">${l}</button>`).join("")}</div>
-        <label>Alimenti</label>
+        <label>Alimenti <span class="dim">— le quantità si impostano sull'alimento (Database)</span></label>
         <div class="fooditems">
           ${work.items.length ? work.items.map((it, idx) => {
             const f = FOODS[it.food] || { label: it.food, cat: "" };
             return `<div class="fooditem">
               <div class="fi-main"><span class="fi-dot" style="background:${catColor(f.cat)}"></span>
                 <span class="fi-name">${f.label}</span>
-                <span class="fi-amt">${it.range[0] === it.range[1] ? it.range[0] + "g" : it.range[0] + "–" + it.range[1] + "g"}</span></div>
+                <span class="fi-amt">${foodQtyLabel(it.food)}</span></div>
               <div class="fi-actions">
-                <button class="btn ghost sm" data-mrange="${idx}">Range</button>
-                <button class="btn ghost sm" data-mdel="${idx}">Togli</button>
+                <button class="btn ghost sm" data-mdel="${idx}" style="width:100%">Togli</button>
               </div>
             </div>`;
           }).join("") : '<div class="hint" style="margin:0">Nessun alimento. Aggiungine almeno uno.</div>'}
@@ -941,8 +1000,10 @@
       $("#mLabel", sh).oninput = (e) => work.label = e.target.value;
       $$("[data-mslot]", sh).forEach((el) => el.onclick = () => { work.slot = el.dataset.mslot; render(); });
       $$("[data-mdel]", sh).forEach((el) => el.onclick = () => { work.items.splice(+el.dataset.mdel, 1); render(); });
-      $$("[data-mrange]", sh).forEach((el) => el.onclick = () => editRange(+el.dataset.mrange));
-      $("#mAdd", sh).onclick = () => pickFood((foodId) => { work.items.push({ food: foodId, range: autoRange(foodId) }); render(); });
+      $("#mAdd", sh).onclick = () => pickFood((foodId) => {
+        if (!work.items.some((x) => x.food === foodId)) work.items.push({ food: foodId });
+        render();
+      });
       const tog = $("#mToggle", sh); if (tog) tog.onclick = () => { work.disabled = !work.disabled; render(); };
       const del = $("#mDelete", sh); if (del) del.onclick = () => {
         if (confirm(`Eliminare "${work.label}"?`)) { delete BLOCKS[id]; saveBlocks(); closeSheet(); renderBlocks(); }
@@ -950,36 +1011,14 @@
       $("#mSave", sh).onclick = () => save();
     };
 
-    function editRange(idx) {
-      const it = work.items[idx];
-      const f = FOODS[it.food];
-      const body = `<h3>Range · ${f.label}</h3>
-        <div class="hint">Min e max grammi che il bilanciatore può usare. (Stesso valore = grammatura fissa.)</div>
-        <div class="grid2">
-          <div><label>Min (g)</label><input id="rMin" type="number" inputmode="numeric" value="${it.range[0]}"></div>
-          <div><label>Max (g)</label><input id="rMax" type="number" inputmode="numeric" value="${it.range[1]}"></div>
-        </div>
-        <div class="actions"><button class="btn ghost" data-back>Indietro</button>
-          <button class="btn primary" id="rOk">Ok</button></div>`;
-      openSheet(body, (sh) => {
-        $("[data-back]", sh).onclick = render;
-        $("#rOk", sh).onclick = () => {
-          let lo = Math.max(0, +$("#rMin", sh).value || 0), hi = Math.max(lo, +$("#rMax", sh).value || lo);
-          it.range = [lo, hi]; render();
-        };
-      });
-    }
-
     function save() {
       const label = (work.label || "").trim();
       if (!label) { toast("Dai un nome al pasto"); return; }
       if (!work.items.length) { toast("Aggiungi almeno un alimento"); return; }
       const key = id || ("meal_" + Date.now());
-      // converti items: range con min===max => grams fisso
-      const items = work.items.map((it) => it.range[0] === it.range[1] ? { food: it.food, grams: it.range[0] } : { food: it.food, range: it.range });
+      const items = work.items.map((it) => ({ food: it.food }));
       const prev = BLOCKS[id] || {};
       BLOCKS[key] = { ...prev, label, slot: work.slot, items, custom: prev.custom ?? true, disabled: !!work.disabled };
-      // se è un seed modificato, segnalo come modificato (per il ripristino)
       if (id && !prev.custom) BLOCKS[key].edited = true;
       saveBlocks(); closeSheet(); renderBlocks();
       toast(isNew ? "Pasto creato ✓" : "Pasto salvato ✓");

@@ -52,11 +52,14 @@
 
     <!-- SETTIMANA -->
     <section class="screen" id="screen-settimana">
-      <div class="section-title">La settimana</div>
-      <div class="pad row" style="margin-bottom:6px">
-        <button class="btn primary" id="genWeekBtn" style="flex:1">Genera / Rigenera</button>
-        <button class="btn ghost" id="swapModeBtn" style="flex:0 0 auto">⇅ Scambia</button>
+      <div class="wkhead">
+        <span class="section-title" style="padding:0">La settimana</span>
+        <div class="hactions">
+          <button class="icon-btn" id="swapModeBtn" title="Scambia giorni">⇅</button>
+          <button class="icon-btn" id="genWeekBtn" title="Rigenera settimana">↻</button>
+        </div>
       </div>
+      <div id="weekProposal"></div>
       <div id="weekList"></div>
     </section>
 

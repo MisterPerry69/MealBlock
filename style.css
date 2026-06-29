@@ -275,6 +275,11 @@ nav button.active{ color:var(--acc); }
 .weekday.droptarget{ outline:2px dashed var(--acc); outline-offset:-2px; }
 .weekday.today{ border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset; }
 .weekday.today .wname{ color:var(--acc); font-weight:700; }
+.wkhead{ display:flex; align-items:center; justify-content:space-between; padding:18px 16px 10px; }
+.icon-btn.active-btn{ background:var(--acc); color:var(--accink); border-color:var(--acc); }
+.dim{ color:var(--dim); }
+.proposal{ margin:0 16px 12px; background:#16301f; border:1px solid #28482f; border-radius:16px; padding:14px 16px; font-size:14px; }
+.proposal .row .btn{ }
 .weekday .wtype:disabled, .wmeal:disabled{ opacity:.85; cursor:default; }
 .wmeals{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 4px; }
 .wmeal{ display:flex; align-items:center; gap:8px; font-family:inherit; cursor:pointer; text-align:left;

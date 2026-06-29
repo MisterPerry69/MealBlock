@@ -1,5 +1,5 @@
 // MealBlock service worker
-const CACHE = "mealblock-v7";
+const CACHE = "mealblock-v8";
 const ASSETS = [
   "./", "./index.html", "./style.css", "./data.js", "./engine.js", "./app.js",
   "./manifest.webmanifest", "./icon-192.png", "./icon-512.png",

@@ -173,20 +173,29 @@
       blocks.push({ slot, blockId, label: block.label, items, frozen: false });
     }
 
-    // 3) macro fisse (blocchi congelati + item con grammatura fissa)
+    // 3) Risolvi ogni item del blocco a partire dall'ALIMENTO:
+    //    - sfuso  -> variabile libera entro food.range (il solver la regola)
+    //    - fisso  -> grammatura food.fixed (immutabile)
+    //    Se l'item ha già una `grams` esplicita (es. blocco congelato o
+    //    modifica manuale) la si rispetta come fissa.
     let fixedTotal = { ...EMPTY };
-    const vars = []; // variabili libere: { b, idx, food, min, max, perG{...} }
+    const vars = [];
     for (const b of blocks) {
       b.items.forEach((it, idx) => {
-        const isVar = !b.frozen && Array.isArray(it.range);
+        const f = FOODS[it.food] || { kcal: 0, protein: 0, carbs: 0, fat: 0, kind: "fisso", fixed: 0 };
+        const hasExplicit = typeof it.grams === "number";
+        const isVar = !b.frozen && !hasExplicit && f.kind === "sfuso" && Array.isArray(f.range);
         if (isVar) {
-          const f = FOODS[it.food] || { kcal: 0, protein: 0, carbs: 0, fat: 0 };
-          vars.push({ b, idx, food: it.food, min: it.range[0], max: it.range[1],
+          vars.push({ b, idx, food: it.food, min: f.range[0], max: f.range[1],
             perG: { kcal: f.kcal / 100, protein: f.protein / 100, carbs: f.carbs / 100, fat: f.fat / 100 } });
-          // inizializza al punto medio del range
-          b.items[idx] = { food: it.food, grams: roundStep((it.range[0] + it.range[1]) / 2) };
+          b.items[idx] = { food: it.food, grams: roundStep((f.range[0] + f.range[1]) / 2) };
         } else {
-          fixedTotal = addMacros(fixedTotal, calcMacros([it], FOODS));
+          // grammatura fissa: esplicita, oppure food.fixed, oppure midpoint range
+          const g = hasExplicit ? it.grams
+            : (f.kind === "fisso" && typeof f.fixed === "number") ? f.fixed
+            : Array.isArray(f.range) ? Math.round((f.range[0] + f.range[1]) / 2) : 0;
+          b.items[idx] = { food: it.food, grams: g };
+          fixedTotal = addMacros(fixedTotal, calcMacros([b.items[idx]], FOODS));
         }
       });
     }
