@@ -268,10 +268,22 @@
   window.MB_ACTIONS = actions;
 
   // ---- render unico ----
+  const THEME_HEX = { colazione: "#F1C97E", pranzo: "#A6D6A0", merenda: "#9EC9DE", cena: "#B4A2D6", magenta: "#D78FCD" };
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+
+  function syncTheme(phone) {
+    // propaga il tema del .phone al <body> (safe-area/notch dello stesso colore)
+    const cls = (phone.className.match(/theme-(\w+)/) || [])[1] || "magenta";
+    document.body.className = "theme-" + cls;
+    if (metaTheme) metaTheme.setAttribute("content", THEME_HEX[cls] || THEME_HEX.magenta);
+  }
+
   function render(state) {
     if (!state.booted) return; // boot screen già in HTML
     const view = VIEWS[state.route] || VIEWS.oggi;
-    root.replaceChildren(view(state));
+    const phone = view(state);
+    root.replaceChildren(phone);
+    syncTheme(phone);
     // side-effect di render: porta in vista la card appena aperta
     if (state.scrollTo) {
       const el = root.querySelector(`[data-slot="${state.scrollTo}"]`);
