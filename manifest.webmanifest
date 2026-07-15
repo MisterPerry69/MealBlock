@@ -1,0 +1,17 @@
+{
+  "name": "MealBlock",
+  "short_name": "MealBlock",
+  "description": "Piano pasti a blocchi, deciso per te.",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#D78FCD",
+  "theme_color": "#D78FCD",
+  "start_url": "./index.html",
+  "scope": "./",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

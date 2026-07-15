@@ -1,0 +1,176 @@
+/* ============================================================
+   MealBlock v2 — Design System
+   Approvato su scratchpad/v2-A-fedele3.html
+   Una tinta per pasto attivo; superfici = vetro satinato sulla tinta.
+   ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  /* macro colors (fissi) */
+  --pro:#E4913F; --fat:#D9B23C;
+  /* default theme = pranzo/generico magenta (sovrascritto per fascia) */
+  --bg:#D78FCD; --ink:#2c1329; --mut:#7a4d74; --acc:#a63f97; --anchor:#241020; --carb:#C77FBD;
+}
+/* ---- temi per fascia oraria (il colore = pasto attivo) ---- */
+.theme-colazione{ --bg:#F1C97E; --ink:#3a2708; --mut:#8a6a2e; --acc:#C67C1B; --anchor:#2a1d07; --carb:#E0A94C; }
+.theme-pranzo   { --bg:#A6D6A0; --ink:#14260f; --mut:#4c6b3f; --acc:#2f7d3a; --anchor:#161f13; --carb:#66C07E; }
+.theme-merenda  { --bg:#9EC9DE; --ink:#0e2833; --mut:#3f6470; --acc:#2c86a6; --anchor:#122530; --carb:#5FA8CC; }
+.theme-cena     { --bg:#B4A2D6; --ink:#1c1330; --mut:#574a72; --acc:#6a4bb0; --anchor:#171024; --carb:#9B85CC; }
+.theme-magenta  { --bg:#D78FCD; --ink:#2c1329; --mut:#7a4d74; --acc:#a63f97; --anchor:#241020; --carb:#C77FBD; }
+
+html,body{height:100%}
+body{font-family:'Inter',sans-serif;background:#000;color:var(--ink);
+  -webkit-font-smoothing:antialiased;display:flex;justify-content:center}
+.boot{color:#fff;opacity:.5;padding:40px;font-size:14px}
+
+/* ---- superfici vetro satinato (luce sul border-top) ---- */
+.glass{ background:rgba(255,255,255,.40); border-top:1px solid rgba(255,255,255,.6); }
+.glass-strong{ background:rgba(255,255,255,.60); border-top:1px solid rgba(255,255,255,.75); }
+.glass-active{ background:rgba(255,255,255,.74); border-top:1px solid rgba(255,255,255,.85); }
+
+/* ---- app shell ---- */
+.phone{width:100%;max-width:440px;height:100dvh;background:var(--bg);color:var(--ink);
+  display:flex;flex-direction:column;overflow:hidden;position:relative;transition:background .3s}
+.screen{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.scroll{flex:1;overflow-y:auto;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+
+/* ---- header ---- */
+.head{display:flex;align-items:center;gap:12px;padding:16px 20px 14px}
+.head h1{font-family:'Archivo';font-weight:900;font-size:29px;letter-spacing:-.5px}
+.head .on{background:var(--ink);color:var(--bg);font-family:'Archivo';font-weight:800;font-size:12px;
+  padding:4px 12px;border-radius:20px;letter-spacing:.5px;cursor:pointer}
+.head .icobtn{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.5);border:none;
+  border-top:1px solid rgba(255,255,255,.7);color:var(--ink);display:grid;place-items:center;cursor:pointer;flex:0 0 40px}
+.head .icobtn:active{transform:scale(.94)}
+.head .spacer{margin-left:auto}
+
+/* ---- calbox (calorie + macro) ---- */
+.calbox{margin:2px 16px 16px;border-radius:26px;overflow:hidden;box-shadow:rgba(0,0,0,.3) 0 3px 7px -3px}
+.calbox .top{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 16px}
+.calbox .lab{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:1px;
+  color:var(--mut);text-transform:uppercase;margin-bottom:4px}
+.calbox .n{font-family:'Archivo';font-weight:900;font-size:52px;letter-spacing:-2px;line-height:.82}
+.calbox .n span{font-size:19px;font-weight:600;color:var(--mut);letter-spacing:0}
+.calbox .unit{font-size:15px;color:var(--mut);font-weight:600;margin-top:4px}
+.calbox .ring{width:90px;height:90px;position:relative;flex:0 0 90px}
+.calbox .ring svg{transform:rotate(-90deg)}
+.calbox .ring .p{position:absolute;inset:0;display:grid;place-items:center;font-family:'Archivo';font-weight:800;font-size:20px;color:var(--acc)}
+.macro{background:var(--anchor);border-radius:20px;padding:20px;color:#F3F0E6}
+.mrow{display:flex;align-items:center;gap:10px;margin-bottom:15px}
+.mrow:last-child{margin-bottom:0}
+.mrow .ic{width:15px;flex:0 0 15px;color:#ffffffaa;display:grid;place-items:center}
+.mrow .name{font-size:10px;font-weight:700;letter-spacing:.5px;width:34px;color:#ffffffcc}
+.mrow .track{flex:1;height:7px;background:#ffffff22;border-radius:6px;overflow:hidden}
+.mrow .fill{height:100%;border-radius:6px;transition:width .4s}
+.mrow .v{font-family:'Archivo';font-weight:700;font-size:12px;width:70px;text-align:right;font-variant-numeric:tabular-nums}
+.mrow .v .t{color:#ffffff66;font-weight:600}
+.mrow.c .v{color:var(--carb)} .mrow.p .v{color:var(--pro)} .mrow.f .v{color:var(--fat)}
+
+/* ---- timeline pasti ---- */
+.meals{padding:2px 16px 8px}
+.mcol{display:flex;flex-direction:column;gap:12px}
+.row{display:grid;grid-template-columns:24px 1fr;column-gap:12px;position:relative}
+.rail{position:relative;width:24px}
+.node{position:absolute;top:27px;left:50%;transform:translate(-50%,-50%);
+  width:19px;height:19px;border-radius:50%;box-sizing:border-box;z-index:2}
+.rail::after{content:'';position:absolute;left:50%;transform:translateX(-50%);top:27px;height:calc(100% + 12px);width:3px;border-radius:3px}
+.row:last-child .rail::after{display:none}
+.done .node{background:var(--acc);border:3px solid var(--acc)}
+.done .node::after{content:'';position:absolute;left:3.5px;top:1px;width:4px;height:7px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+.active .node{background:var(--acc);border:3px solid var(--acc)}
+.active .node::after{content:'';position:absolute;inset:0;margin:auto;width:7px;height:7px;border-radius:50%;background:#fff}
+.future .node{background:rgba(255,255,255,.75);border:3px solid rgba(255,255,255,.75)}
+.done .rail::after{background:var(--acc)}
+.active .rail::after{background:rgba(255,255,255,.7)}
+.future .rail::after{background:rgba(255,255,255,.7)}
+
+.card{border-radius:18px;overflow:hidden;cursor:pointer}
+.crow{display:flex;align-items:center;gap:12px;padding:0 14px;height:54px}
+.crow .mi{width:38px;height:38px;flex:0 0 38px;border-radius:12px;display:grid;place-items:center;font-size:21px}
+.mi.colazione{background:#F6D98C} .mi.pranzo{background:#C6E39B} .mi.merenda{background:#B4DAEC} .mi.cena{background:#F2C08F} .mi.snack{background:#E0C4EC}
+.crow .mi{cursor:pointer;transition:transform .15s,background .2s}
+.crow .mi:active{transform:scale(.9)}
+.crow .mi.checked{background:var(--acc);color:#fff}
+.crow h3{font-family:'Archivo';font-weight:800;font-size:16px;letter-spacing:-.2px;flex:1}
+.crow .chev{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.6);display:grid;place-items:center;color:var(--acc);flex:0 0 30px}
+.card.open .chev svg{transform:rotate(180deg)}
+.chev svg{transition:transform .2s}
+.foods{max-height:0;overflow:hidden;transition:max-height .28s}
+.card.open .foods{max-height:400px}
+.food{display:flex;align-items:center;gap:11px;padding:10px 15px 10px 18px;border-top:1px solid #00000012}
+.food .dot{width:7px;height:7px;border-radius:50%;background:var(--acc);opacity:.55;flex:0 0 7px}
+.food .fn{flex:1;font-size:15px;font-weight:500}
+.food .fg{font-family:'Archivo';font-weight:700;font-size:15px;color:var(--mut);font-variant-numeric:tabular-nums}
+.card.done{opacity:.85}
+/* riga azioni dentro il blocco aperto: modifica (matita) */
+.fedit{display:flex;justify-content:flex-end;gap:8px;padding:8px 15px 12px;border-top:1px solid #00000012}
+.fedit button{width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.7);
+  color:var(--acc);display:grid;place-items:center;cursor:pointer}
+.fedit button:active{transform:scale(.92)}
+
+/* ---- bottom sheet (scostamento 3 vie) ---- */
+.scrim{position:absolute;inset:0;background:rgba(20,8,18,.45);z-index:20;
+  opacity:0;animation:fade .2s forwards}
+@keyframes fade{to{opacity:1}}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:21;background:#fff;
+  border-radius:26px 26px 0 0;max-height:82%;display:flex;flex-direction:column;
+  color:#2c1329;transform:translateY(100%);animation:up .28s cubic-bezier(.2,.9,.2,1) forwards}
+@keyframes up{to{transform:translateY(0)}}
+.sheet .grab{width:38px;height:4px;border-radius:4px;background:#0002;margin:10px auto 4px}
+.sheet .tabs{display:flex;gap:8px;padding:8px 16px 4px}
+.sheet .tabs button{flex:1;border:none;background:#f2ecf1;color:#7a4d74;height:44px;border-radius:14px;
+  display:grid;place-items:center;cursor:pointer}
+.sheet .tabs button.on{background:var(--acc,#a63f97);color:#fff}
+.sheet .body{padding:8px 16px 20px;overflow-y:auto;scrollbar-width:none}
+.sheet .body::-webkit-scrollbar{display:none}
+.sheet .srow{display:flex;align-items:center;gap:12px;padding:12px 6px;border-bottom:1px solid #0000000d;cursor:pointer}
+.sheet .srow .em{font-size:22px;width:26px;text-align:center}
+.sheet .srow .nm{flex:1;font-weight:600;font-size:15px}
+.sheet .srow .kc{font-size:12px;color:#9a7a94;font-variant-numeric:tabular-nums}
+.sheet .qty{display:flex;align-items:center;gap:12px;padding:12px 6px;border-bottom:1px solid #0000000d}
+.sheet .qty .nm{flex:1;font-weight:600}
+.sheet .qty .stp{display:flex;align-items:center;gap:10px}
+.sheet .qty .stp button{width:32px;height:32px;border-radius:50%;border:none;background:#f2ecf1;color:var(--acc,#a63f97);font-size:18px;font-weight:700;cursor:pointer}
+.sheet .qty .g{font-family:'Archivo';font-weight:700;min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+.sheet .field{width:100%;border:1.5px solid #0001;border-radius:14px;padding:14px;font-family:inherit;font-size:15px;resize:none}
+.sheet .go{width:100%;height:48px;border:none;border-radius:14px;background:var(--acc,#a63f97);color:#fff;font-weight:700;font-size:15px;margin-top:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.sheet .search-in{width:100%;border:1.5px solid #0001;border-radius:14px;padding:12px 14px;font-family:inherit;font-size:15px;margin-bottom:6px}
+
+/* ---- toast ---- */
+.toast{position:absolute;left:16px;right:16px;bottom:96px;z-index:30;background:var(--anchor,#241020);
+  color:#F3F0E6;padding:14px 18px;border-radius:16px;font-size:14px;font-weight:600;
+  box-shadow:0 6px 20px -6px #0007;animation:up .25s ease forwards}
+
+/* ---- nav pillola ---- */
+nav{margin:4px 16px calc(14px + env(safe-area-inset-bottom));border-radius:30px;display:flex;justify-content:space-around;padding:12px}
+nav button{background:none;border:none;color:var(--mut);opacity:.6;cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.3px;font-family:inherit}
+nav button.on{color:var(--acc);opacity:1}
+
+/* ---- settimana ---- */
+.wdays{display:flex;flex-direction:column;gap:10px;padding:6px 16px 12px}
+.wday{display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.40);border-top:1px solid rgba(255,255,255,.6);
+  border-radius:18px;padding:12px 16px}
+.wday.today{background:rgba(255,255,255,.74);border-top-color:rgba(255,255,255,.85);box-shadow:rgba(0,0,0,.18) 0 3px 8px -4px}
+.wday .wdate{display:flex;flex-direction:column;align-items:center;width:38px;flex:0 0 38px}
+.wday .wdate .dow{font-size:10px;font-weight:800;letter-spacing:.5px;color:var(--mut)}
+.wday .wdate .num{font-family:'Archivo';font-weight:900;font-size:22px;line-height:1;color:var(--ink)}
+.wday.today .wdate .num{color:var(--acc)}
+.wday .wmeals{flex:1;font-size:19px;letter-spacing:2px;filter:saturate(1)}
+.wday .wtype{font-family:'Archivo';font-weight:800;font-size:11px;padding:5px 11px;border-radius:14px;
+  letter-spacing:.5px;cursor:pointer;flex:0 0 auto}
+.wday .wtype.on{background:var(--ink);color:var(--bg)}
+.wday .wtype.off{background:rgba(255,255,255,.6);color:var(--mut)}
+
+/* ---- spesa ---- */
+.shop{display:flex;flex-direction:column;gap:12px;padding:6px 16px 12px}
+.shopcat{border-radius:18px;overflow:hidden}
+.shophead{font-family:'Archivo';font-weight:800;font-size:13px;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--mut);padding:13px 16px 8px}
+.shoprow{display:flex;align-items:center;gap:12px;padding:9px 16px;border-top:1px solid #00000010}
+.shoprow .em{font-size:20px;width:24px;text-align:center}
+.shoprow .nm{flex:1;font-weight:500;font-size:15px}
+.shoprow .amt{font-family:'Archivo';font-weight:700;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* ---- utility ---- */
+.status{display:flex;justify-content:space-between;padding:15px 26px 2px;font-size:14px;font-weight:700}
