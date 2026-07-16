@@ -27,5 +27,12 @@
   <script src="ui.js"></script>
   <script src="views.js"></script>
   <script src="main.js"></script>
+  <script>
+  // La v2 non usa cache offline. Registro il sw.js "kill-switch" che
+  // sostituisce il vecchio SW della v1 (cache aggressiva) e si auto-rimuove.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+  </script>
 </body>
 </html>
