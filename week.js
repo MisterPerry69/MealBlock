@@ -17,7 +17,12 @@
     x.setHours(0, 0, 0, 0);
     return x;
   }
-  function iso(d) { return d.toISOString().slice(0, 10); }
+  // data ISO in ora LOCALE (toISOString è UTC: a mezzanotte locale
+  // scivolerebbe al giorno prima -> settimana tutta shiftata di -1)
+  function iso(d) {
+    const p = (n) => (n < 10 ? "0" : "") + n;
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
   function isoWeekId(d) {
     const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     const day = date.getUTCDay() || 7;
@@ -38,6 +43,25 @@
 
   // conta quante volte un alimento comparirebbe scegliendo un blocco
   function foodsOfBlock(block) { return (block.items || []).map((i) => i.food); }
+
+  // verifica col solver che il giorno sia risolvibile in target; se no,
+  // prova a sostituire pranzo/cena con le alternative (deterministico).
+  function ensureSolvable(day, ctx) {
+    const { foods, blocks, prefs } = ctx;
+    const SOLVER = (typeof window !== "undefined" && window.MB_SOLVER) || (typeof require !== "undefined" ? require("./solver.js") : null);
+    if (!SOLVER || !foods) return day; // senza solver/foods non posso verificare
+    const ok = (sel) => SOLVER.solveDay({ dayType: day.dayType, foods, blocks, prefs, selection: sel }).status.inTarget;
+    if (ok(day.selection)) return day;
+    // ritenta sostituendo prima la cena, poi il pranzo, con ogni alternativa
+    for (const slot of ["cena", "pranzo"]) {
+      const alts = Object.values(blocks).filter((b) => b.slot === slot && b.enabled !== false && b.id !== day.selection[slot]);
+      for (const alt of alts) {
+        const sel = { ...day.selection, [slot]: alt.id };
+        if (ok(sel)) return { ...day, selection: sel };
+      }
+    }
+    return day; // nessuna combinazione in target: pazienza, resta la migliore
+  }
 
   // genera la settimana per la data `anchor` (default oggi)
   function generateWeek(opts) {
@@ -62,13 +86,19 @@
       const selection = {};
       for (const slot of SLOTS) {
         const pick = chooseBlock(by[slot], { blockLimits, foodLimits, blockUsed, foodUsed, seed: i, learnBias });
-        if (pick) {
-          selection[slot] = pick.id;
-          blockUsed[pick.id] = (blockUsed[pick.id] || 0) + 1;
-          for (const f of foodsOfBlock(pick)) foodUsed[f] = (foodUsed[f] || 0) + 1;
-        }
+        if (pick) selection[slot] = pick.id;
       }
-      days.push({ date: iso(date), dow, dayType, selection });
+      // verifica che la combinazione sia risolvibile in target per il dayType
+      // (es. pizza in giorno OFF sfonda i carb): se no, sostituisce cena/pranzo
+      let day = { date: iso(date), dow, dayType, selection };
+      day = ensureSolvable(day, { foods: opts.foods, blocks, prefs });
+      // aggiorna i conteggi limiti SULLA selezione definitiva
+      for (const slot of SLOTS) {
+        const id = day.selection[slot]; if (!id) continue;
+        blockUsed[id] = (blockUsed[id] || 0) + 1;
+        for (const f of foodsOfBlock(blocks[id])) foodUsed[f] = (foodUsed[f] || 0) + 1;
+      }
+      days.push(day);
     }
 
     return { id: isoWeekId(start), weekStart: iso(start), onDays: [...onDays], days };

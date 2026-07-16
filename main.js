@@ -23,7 +23,7 @@
     const { foods, blocks, prefs } = state;
     const prev = state.today;
     // giorno corrente nella settimana (se c'è): sorgente di dayType + selezione
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = window.MB_WEEK.iso(new Date());
     const wday = state.week && (state.week.days || []).find((d) => d.date === todayIso);
     const dayType = (opts && opts.dayType) || (prev && prev.dayType) || (wday && wday.dayType) || defaultDayType(prefs);
     const selection = (prev && prev.selection) || (wday && wday.selection) || defaultSelection(dayType);
@@ -53,7 +53,12 @@
       if (firstFuture) firstFuture.state = "active";
     }
 
-    return { ...res, selection, activeSlot: withState.find((b) => b.state === "active")?.slot || null, blocks: withState };
+    // MANGIATO = somma dei soli pasti spuntati (le barre si riempiono spuntando)
+    let eaten = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    for (const b of withState) if (b.state === "done") eaten = SOLVER.addMacros(eaten, SOLVER.calcMacros(b.items, foods));
+    eaten = { kcal: Math.round(eaten.kcal), protein: Math.round(eaten.protein * 10) / 10, carbs: Math.round(eaten.carbs * 10) / 10, fat: Math.round(eaten.fat * 10) / 10 };
+
+    return { ...res, selection, eaten, activeSlot: withState.find((b) => b.state === "active")?.slot || null, blocks: withState };
   }
 
   // ---- validazione lato client dell'output AI (seconda barriera) ----
@@ -91,11 +96,21 @@
 
   // ---- AZIONI (unico punto di mutazione) ----
   const actions = {
-    go(route) { store.set({ route }); },
+    go(route) {
+      const s = store.get();
+      if (s.editingSlot) { actions.toggleEditMeal(s.editingSlot); return; } // prima esci dalla modifica
+      store.set({ route });
+    },
 
     toggleMeal(slot) {
-      store.set((s) => {
-        const wasOpen = (s.openSlots || new Set()).has(slot);
+      const s = store.get();
+      // in modifica: il tap sulla card non chiude niente, esce solo dalla modifica
+      if (s.editingSlot) {
+        if (s.editingSlot === slot) actions.toggleEditMeal(slot);
+        return;
+      }
+      store.set((st) => {
+        const wasOpen = (st.openSlots || new Set()).has(slot);
         // accordion: un solo blocco aperto alla volta
         const open = wasOpen ? new Set() : new Set([slot]);
         // se apro, porto il focus sulla card (meno friction)
@@ -113,7 +128,7 @@
         b.slot === slot ? { ...b, state: b.state === "done" ? "future" : "done" } : b);
       const today = composeTodayFrom({ ...s, today: { ...s.today, blocks } });
       store.set({ today });
-      api.saveDay(serializeDay(today)).catch(() => store.set({ toast: "Salvataggio fallito" }));
+      persistDay(today);
       // learner: spuntare un pasto = segnale di gradimento del blocco
       if (nowDone && target) learn({ type: "checkMeal", blockId: target.blockId });
       api.logEvent("checkMeal", { slot, blockId: target && target.blockId, done: nowDone }).catch(() => {});
@@ -134,12 +149,53 @@
     // ---- settimana ----
     regenerateWeek() {
       const s = store.get();
-      const week = window.MB_WEEK.generateWeek({ blocks: s.blocks, prefs: s.prefs });
+      const week = window.MB_WEEK.generateWeek({ foods: s.foods, blocks: s.blocks, prefs: s.prefs });
       store.set({ week });
       store.set((st) => ({ today: composeToday({ ...st, today: null }) }));
       api.saveWeek(week).catch(() => {});
     },
     openAiWeek() { store.set({ sheet: { type: "ai", text: "" } }); },
+
+    // ---- gestione (alimenti + blocchi) ----
+    setGestTab(gestTab) { store.set({ gestTab }); },
+    newEntity(tab) {
+      if (tab === "alimenti") store.set({ sheet: { type: "foodedit", draft: { id: "", label: "", kcal: 0, carbs: 0, protein: 0, fat: 0, cat: "protein", kind: "sfuso", rangeMin: 50, rangeMax: 200, emoji: "🍽️" }, isNew: true } });
+      else store.set({ sheet: { type: "blockedit", draft: { id: "", label: "", slot: "pranzo", items: [], enabled: true }, isNew: true } });
+    },
+    editFood(id) {
+      const f = store.get().foods[id];
+      if (f) store.set({ sheet: { type: "foodedit", draft: JSON.parse(JSON.stringify(f)), isNew: false } });
+    },
+    editBlock(id) {
+      const b = store.get().blocks[id];
+      if (b) store.set({ sheet: { type: "blockedit", draft: JSON.parse(JSON.stringify(b)), isNew: false } });
+    },
+    setDraft(patch) { store.set((s) => ({ sheet: { ...s.sheet, draft: { ...s.sheet.draft, ...patch } } })); },
+    saveDraft() {
+      const s = store.get();
+      const sh = s.sheet;
+      if (!sh || !sh.draft) return;
+      const d = sh.draft;
+      if (!d.label) { store.set({ toast: "Serve un nome" }); setTimeout(() => store.set({ toast: null }), 1800); return; }
+      if (!d.id) d.id = d.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+      if (sh.type === "foodedit") {
+        ["kcal", "carbs", "protein", "fat", "rangeMin", "rangeMax", "fixed"].forEach((k) => { if (d[k] != null) d[k] = Number(d[k]) || 0; });
+        store.set({ foods: { ...s.foods, [d.id]: d }, sheet: null });
+        api.saveFood(d).catch(() => {});
+      } else {
+        store.set({ blocks: { ...s.blocks, [d.id]: d }, sheet: null });
+        api.saveBlock(d).catch(() => {});
+      }
+      // la giornata può dipendere dai dati modificati
+      store.set((st) => ({ today: composeToday(st) }));
+    },
+    toggleBlockEnabled(id) {
+      const s = store.get();
+      const b = s.blocks[id]; if (!b) return;
+      const nb = { ...b, enabled: b.enabled === false };
+      store.set({ blocks: { ...s.blocks, [id]: nb } });
+      api.saveBlock(nb).catch(() => {});
+    },
 
     // compone la settimana con l'AI (Gemini via GAS); fallback deterministico
     async aiComposeWeek(notes) {
@@ -161,7 +217,7 @@
           store.set({ toast: "Settimana composta con AI" });
         } else {
           // fallback deterministico (AI assente/mock/errore)
-          week = window.MB_WEEK.generateWeek({ blocks: s.blocks, prefs: s.prefs });
+          week = window.MB_WEEK.generateWeek({ foods: s.foods, blocks: s.blocks, prefs: s.prefs });
           store.set({ toast: "AI non disponibile — piano generato in locale" });
         }
         store.set({ week });
@@ -174,6 +230,28 @@
       }
     },
 
+    // apri/chiudi un giorno nel calendario (accordion)
+    toggleDay(date) {
+      store.set((s) => ({ openDay: s.openDay === date ? null : date }));
+    },
+    // scegli un altro blocco per una fascia di un giorno
+    openBlockPicker(date, slot) {
+      const s = store.get();
+      const day = s.week && s.week.days.find((d) => d.date === date);
+      store.set({ sheet: { type: "blockpicker", date, slot, current: day && day.selection[slot] } });
+    },
+    setDayBlock(date, slot, blockId) {
+      const s = store.get();
+      if (!s.week) return;
+      const days = s.week.days.map((d) => d.date === date ? { ...d, selection: { ...d.selection, [slot]: blockId } } : d);
+      const week = { ...s.week, days };
+      store.set({ week, sheet: null });
+      // se ho cambiato oggi, ricomponi la giornata (i pasti fatti restano)
+      const todayIso = window.MB_WEEK.iso(new Date());
+      if (date === todayIso) store.set((st) => ({ today: composeToday({ ...st, today: st.today && { ...st.today, selection: { ...st.today.selection, [slot]: blockId } } }) }));
+      api.saveWeek(week).catch(() => {});
+    },
+
     toggleWeekDayType(date) {
       const s = store.get();
       if (!s.week) return;
@@ -181,21 +259,23 @@
       const week = { ...s.week, days };
       store.set({ week });
       // se è oggi, ricomponi la giornata
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = window.MB_WEEK.iso(new Date());
       if (date === todayIso) store.set((st) => ({ today: composeToday({ ...st, today: null }) }));
       api.saveWeek(week).catch(() => {});
     },
 
-    // ---- scostamento a 3 vie ----
-    openDeviation(slot) { store.set({ sheet: { type: "deviation", slot, tab: "cerca", query: "", text: "" } }); },
+    // ---- modifica pasto inline (long-press sulla card aperta) ----
+    toggleEditMeal(slot) {
+      store.set((s) => ({ editingSlot: s.editingSlot === slot ? null : slot }));
+    },
+    openFoodPicker(slot) { store.set({ sheet: { type: "picker", slot, query: "" } }); },
     closeSheet() { store.set({ sheet: null }); },
-    setSheetTab(tab) { store.set((s) => ({ sheet: { ...s.sheet, tab } })); },
     setSheetQuery(query) { store.set((s) => ({ sheet: { ...s.sheet, query } })); },
     setSheetText(text) { store.set((s) => ({ sheet: { ...s.sheet, text } })); },
 
     addFoodToMeal(slot, foodId) {
       editMeal(slot, (items) => items.some((i) => i.food === foodId) ? items : items.concat([{ food: foodId }]));
-      store.set({ sheet: null }); // aggiunto: chiudo, torno alla giornata aggiornata
+      store.set({ sheet: null }); // chiudo il picker, resto in modifica
       learn({ type: "addFood", food: foodId }); // scelta esplicita: forte segnale di preferenza
       api.logEvent("addFood", { slot, food: foodId }).catch(() => {});
     },
@@ -206,16 +286,21 @@
       editMeal(slot, (items) => items.map((i) =>
         i.food === foodId ? { ...i, grams: Math.max(0, (i.grams || 0) + delta) } : i));
     },
-
-    describeToAi(slot) {
-      const s = store.get();
-      const text = (s.sheet && s.sheet.text || "").trim();
-      if (!text) return;
-      // mock (senza GAS): stima grezza -> alimento generico "extra descritto".
-      // reale (fase 4): api.aiEstimate(text) -> {label,kcal,...}; se non esiste lo aggiunge al DB.
-      store.set({ toast: "AI non attiva in mock — collega GAS (fase 4)" });
-      setTimeout(() => store.get().toast === "AI non attiva in mock — collega GAS (fase 4)" && store.set({ toast: null }), 2600);
+    // tap sulla grammatura = modal nostro con input numerico
+    promptGrams(slot, foodId, current) {
+      store.set({ sheet: { type: "grams", slot, food: foodId, value: String(current || "") } });
     },
+    setGramsValue(value) { store.set((s) => ({ sheet: { ...s.sheet, value } })); },
+    confirmGrams() {
+      const s = store.get();
+      const sh = s.sheet;
+      if (!sh || sh.type !== "grams") return;
+      const g = Math.max(0, Math.round(Number(sh.value)));
+      store.set({ sheet: null });
+      if (!isFinite(g)) return;
+      editMeal(sh.slot, (items) => items.map((i) => i.food === sh.food ? { ...i, grams: g } : i));
+    },
+
   };
 
   // applica una modifica manuale al pasto: il pasto diventa "fissato" (frozen)
@@ -234,15 +319,29 @@
       return b;
     });
     const today = composeToday({ ...s, today: { ...s.today, blocks } });
-    // avviso se, pur ribilanciando, non si rientra in target
-    const warn = !today.status.inTarget ? "Scostamento troppo grande per rientrare oggi" : null;
+    // avviso solo se la modifica fa USCIRE dal target (non se la giornata
+    // era già fuori per conto suo: sarebbe spam a ogni +1g)
+    const wasInTarget = s.today.status && s.today.status.inTarget;
+    const warn = (wasInTarget && !today.status.inTarget) ? "Scostamento troppo grande per rientrare oggi" : null;
     store.set({ today, toast: warn });
     if (warn) setTimeout(() => store.get().toast === warn && store.set({ toast: null }), 3000);
-    api.saveDay(serializeDay(today)).catch(() => {});
+    persistDay(today);
   }
 
   // helper: ricompone da uno stato dato (per checkMeal che passa blocks modificati)
   function composeTodayFrom(state) { return composeToday(state); }
+
+  // persiste la giornata; l'errore di salvataggio viene segnalato UNA volta
+  // sola per sessione (es. GAS non configurato), non ad ogni spunta.
+  let saveWarned = false;
+  function persistDay(today) {
+    api.saveDay(serializeDay(today)).catch(() => {
+      if (saveWarned) return;
+      saveWarned = true;
+      store.set({ toast: "Cloud non raggiungibile — modifiche solo locali" });
+      setTimeout(() => store.set({ toast: null }), 3200);
+    });
+  }
 
   // learner: applica un'osservazione ai punteggi in prefs e persiste
   function learn(event) {
@@ -256,8 +355,8 @@
 
   function serializeDay(today) {
     return {
-      id: new Date().toISOString().slice(0, 10),
-      date: new Date().toISOString().slice(0, 10),
+      id: window.MB_WEEK.iso(new Date()),
+      date: window.MB_WEEK.iso(new Date()),
       dayType: today.dayType,
       selection: today.selection,
       resolved: today.blocks.map((b) => ({ slot: b.slot, blockId: b.blockId, items: b.items, state: b.state })),
@@ -268,22 +367,14 @@
   window.MB_ACTIONS = actions;
 
   // ---- render unico ----
-  const THEME_HEX = { colazione: "#F1C97E", pranzo: "#A6D6A0", merenda: "#9EC9DE", cena: "#B4A2D6", magenta: "#D78FCD" };
-  const metaTheme = document.querySelector('meta[name="theme-color"]');
-
-  function syncTheme(phone) {
-    // propaga il tema del .phone al <body> (safe-area/notch dello stesso colore)
-    const cls = (phone.className.match(/theme-(\w+)/) || [])[1] || "magenta";
-    document.body.className = "theme-" + cls;
-    if (metaTheme) metaTheme.setAttribute("content", THEME_HEX[cls] || THEME_HEX.magenta);
-  }
+  // tinta fissa magenta ovunque (decisione: la fascia si vede dalla card)
+  document.body.className = "theme-magenta";
 
   function render(state) {
     if (!state.booted) return; // boot screen già in HTML
     const view = VIEWS[state.route] || VIEWS.oggi;
     const phone = view(state);
     root.replaceChildren(phone);
-    syncTheme(phone);
     // side-effect di render: porta in vista la card appena aperta
     if (state.scrollTo) {
       const el = root.querySelector(`[data-slot="${state.scrollTo}"]`);
@@ -304,7 +395,7 @@
       });
       // settimana: usa quella dal cloud o generala in locale (deterministico)
       store.set((s) => {
-        const week = data.currentWeek || window.MB_WEEK.generateWeek({ blocks: s.blocks, prefs: s.prefs });
+        const week = data.currentWeek || window.MB_WEEK.generateWeek({ foods: s.foods, blocks: s.blocks, prefs: s.prefs });
         return { week };
       });
       // compone la giornata di oggi dalla selezione della settimana corrente
