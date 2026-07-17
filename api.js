@@ -40,6 +40,15 @@
     return json.data;
   }
 
+  // ---- coda scritture: coalescing + retry; stato -> store (badge sync) ----
+  const sendWrite = (action, payload) =>
+    CFG.useMock ? mockDelay() : gasPost(action, payload);
+  const queue = window.MB_SYNC.createSyncQueue({
+    send: sendWrite,
+    // lo store è caricato dopo api.js: lookup pigro a runtime
+    onState: (sync) => window.MB_STORE && window.MB_STORE.set({ sync }),
+  });
+
   // ---- mock locale (design/dev senza GAS) ----
   const mockDelay = () => new Promise((r) => setTimeout(r, 120));
   function mockBootstrap() {
@@ -67,26 +76,12 @@
       if (CFG.useMock) { await mockDelay(); return null; }
       return gasGet("getWeek", { id });
     },
-    async saveDay(day) {
-      if (CFG.useMock) { await mockDelay(); return day; }
-      return gasPost("saveDay", day);
-    },
-    async saveWeek(week) {
-      if (CFG.useMock) { await mockDelay(); return week; }
-      return gasPost("saveWeek", week);
-    },
-    async savePrefs(prefs) {
-      if (CFG.useMock) { await mockDelay(); return prefs; }
-      return gasPost("savePrefs", prefs);
-    },
-    async saveFood(food) {
-      if (CFG.useMock) { await mockDelay(); return food; }
-      return gasPost("saveFood", food);
-    },
-    async saveBlock(block) {
-      if (CFG.useMock) { await mockDelay(); return block; }
-      return gasPost("saveBlock", block);
-    },
+    saveDay(day) { queue.enqueue("saveDay", day); },
+    saveWeek(week) { queue.enqueue("saveWeek", week); },
+    savePrefs(prefs) { queue.enqueue("savePrefs", prefs); },
+    saveFood(food) { queue.enqueue("saveFood", food); },
+    saveBlock(block) { queue.enqueue("saveBlock", block); },
+    sync: queue,
     async logEvent(type, payload) {
       if (CFG.useMock) { return { ok: true }; }
       return gasPost("logEvent", { type, payload });

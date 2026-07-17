@@ -51,6 +51,18 @@
     );
   }
 
+  // ---- barra riadattamenti (chiudibile): cosa ha ricalcolato il solver ----
+  function adjustBar(today, foods) {
+    const adjs = today.adjustments || [];
+    if (!adjs.length) return null;
+    const lines = window.MB_ADJUST.formatAdjustments(adjs, foods, SLOT_NAME);
+    return h("div", { class: "adjbar glass" },
+      h("span", { class: "aic" }, icon("refresh-cw", 13, 2.4)),
+      h("div", { class: "alines" }, lines.map((t) => h("div", {}, t))),
+      h("button", { class: "axbtn", "aria-label": "Chiudi", onClick: () => A().dismissAdjustments() }, icon("x", 13, 2.6)),
+    );
+  }
+
   // ---- card pasto (nella timeline) ----
   // long-press helper: tenere premuto ~450ms scatena fn (tap normale escluso)
   function longPress(el, fn) {
@@ -66,7 +78,7 @@
     return el;
   }
 
-  function mealCard(block, state, foods, open, editing) {
+  function mealCard(block, state, foods, open, editing, adjusted) {
     const slot = block.slot;
     const emoji = (foods[block.items[0] && block.items[0].food] || {}).emoji || "🍽️";
     const glass = state === "active" ? "glass-active" : "glass";
@@ -80,6 +92,7 @@
             onClick: (e) => { e.stopPropagation(); A().checkMeal && A().checkMeal(slot); } },
           done ? icon("check", 22, 3) : emoji),
         h("h3", {}, SLOT_NAME[slot] || block.label),
+        adjusted && h("span", { class: "adj", "aria-label": "Riadattato" }, icon("refresh-cw", 11, 2.6)),
         h("div", { class: "chev" }, icon("chevron-down", 18, 2.4)),
       ),
       h("div", { class: "foods" },
@@ -87,6 +100,7 @@
           const f = foods[it.food] || {};
           const k = (it.grams || 0) / 100;
           const cpf = h("span", { class: "cpf" },
+            h("b", { class: "k" }, Math.round((f.kcal || 0) * k)),
             h("b", { class: "c" }, "C " + Math.round((f.carbs || 0) * k)),
             h("b", { class: "p" }, "P " + Math.round((f.protein || 0) * k)),
             h("b", { class: "f" }, "F " + Math.round((f.fat || 0) * k)));
@@ -110,6 +124,16 @@
           h("span", { class: "fn", style: { opacity: .45 } }, ""),
           h("button", { class: "stpb add" }, icon("plus", 17, 2.6)),
         ),
+        (() => {
+          const tot = window.MB_SOLVER.calcMacros(block.items, foods);
+          return h("div", { class: "food total" },
+            h("span", { class: "fn" }, "Totale"),
+            h("span", { class: "cpf" },
+              h("b", { class: "k" }, tot.kcal),
+              h("b", { class: "c" }, "C " + Math.round(tot.carbs)),
+              h("b", { class: "p" }, "P " + Math.round(tot.protein)),
+              h("b", { class: "f" }, "F " + Math.round(tot.fat))));
+        })(),
       ),
     );
     // long-press sulla card aperta (non fatta) = entra/esce dalla modifica
@@ -119,11 +143,12 @@
 
   // ---- timeline (righe rail+card) ----
   function timeline(day, foods, openSlots, editingSlot) {
+    const adjSlots = new Set((day.adjustments || []).map((a) => a.slot));
     const rows = day.blocks.map((b, i) => {
       const st = b.state || "future";
       return h("div", { class: "row " + st },
         h("div", { class: "rail" }, h("div", { class: "node" })),
-        mealCard(b, st, foods, openSlots.has(b.slot), editingSlot === b.slot),
+        mealCard(b, st, foods, openSlots.has(b.slot), editingSlot === b.slot, adjSlots.has(b.slot)),
       );
     });
     return h("div", { class: "meals" }, h("div", { class: "mcol" }, rows));
@@ -142,6 +167,16 @@
         h("button", { class: r === route ? "on" : "", onClick: () => A().go && A().go(r) },
           icon(ic, 21, r === route ? 2.4 : 2), h("span", {}, lab))),
     );
+  }
+
+  // ---- badge sync: ⋯ scritture in volo, ✓ tutto salvato, ⚠ tap = riprova ----
+  function syncBadge(state) {
+    const s = state.sync || { pending: 0, error: null };
+    if (s.error) return h("button", { class: "sync err", "aria-label": "Salvataggio fallito, riprova",
+      onClick: () => window.MB_API.sync.flush() }, icon("triangle-alert", 16, 2.4));
+    if (s.pending > 0) return h("span", { class: "sync busy", "aria-label": "Salvataggio in corso" },
+      icon("refresh-cw", 14, 2.4));
+    return h("span", { class: "sync ok", "aria-label": "Tutto salvato" }, icon("check", 14, 2.6));
   }
 
   // ---- modal CENTRALE: scegli un alimento da aggiungere al pasto ----
@@ -306,6 +341,7 @@
       h("h1", {}, dow),
       today && h("span", { class: "on", onClick: () => A().toggleDayType && A().toggleDayType() }, today.dayType),
       h("div", { class: "spacer" }),
+      syncBadge(state),
       h("button", { class: "icobtn", title: "Rigenera", onClick: () => A().regenerate && A().regenerate() }, icon("refresh-cw", 19, 2.2)),
     );
 
@@ -318,6 +354,8 @@
     } else {
       // le barre mostrano il MANGIATO (pasti spuntati) vs target
       inner.append(calbox(today.eaten || { kcal: 0, protein: 0, carbs: 0, fat: 0 }, today.target));
+      const ab = adjustBar(today, foods);
+      if (ab) inner.append(ab);
       inner.append(timeline(today, foods, state.openSlots || new Set(), state.editingSlot));
     }
 
@@ -339,6 +377,7 @@
     inner.append(h("div", { class: "head" },
       h("h1", {}, "SETTIMANA"),
       h("div", { class: "spacer" }),
+      syncBadge(state),
       h("button", { class: "icobtn", title: "Componi con AI", onClick: () => A().openAiWeek && A().openAiWeek() }, icon("sparkles", 19, 2.2)),
       h("button", { class: "icobtn", title: "Rigenera", onClick: () => A().regenerateWeek && A().regenerateWeek() }, icon("refresh-cw", 19, 2.2)),
     ));
@@ -394,7 +433,7 @@
     const phone = h("div", { class: "phone theme-magenta" });
     const scroll = h("div", { class: "screen" }, h("div", { class: "scroll" }));
     const inner = scroll.firstChild;
-    inner.append(h("div", { class: "head" }, h("h1", {}, "SPESA")));
+    inner.append(h("div", { class: "head" }, h("h1", {}, "SPESA"), h("div", { class: "spacer" }), syncBadge(state)));
 
     // ricostruisco i giorni risolti col solver, poi aggrego
     const SOLVER = window.MB_SOLVER;
@@ -432,6 +471,7 @@
     inner.append(h("div", { class: "head" },
       h("h1", {}, tab.toUpperCase()),
       h("div", { class: "spacer" }),
+      syncBadge(state),
       h("button", { class: "icobtn", title: "Nuovo", onClick: () => A().newEntity && A().newEntity(tab) }, icon("plus", 20, 2.4)),
     ));
 

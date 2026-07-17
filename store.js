@@ -28,6 +28,7 @@
     route: "oggi",          // oggi | settimana | lista | profilo
     booted: false,
     loading: {},            // { [key]: true }
+    sync: { pending: 0, error: null },  // stato coda scritture (badge ⋯/✓/⚠)
     error: null,            // { code, message } | null
     foods: {},              // { id: food }
     blocks: {},             // { id: block }
