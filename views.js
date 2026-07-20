@@ -5,7 +5,7 @@
 // ============================================================
 (function () {
   "use strict";
-  const { h, icon, ring } = window.MB_UI;
+  const { h, icon, ring, field } = window.MB_UI;
   const A = () => window.MB_ACTIONS || {};
 
   const DOW = ["DOMENICA", "LUNEDÌ", "MARTEDÌ", "MERCOLEDÌ", "GIOVEDÌ", "VENERDÌ", "SABATO"];
@@ -221,8 +221,25 @@
       .slice(0, 40);
     return [h("div", { class: "scrim", onClick: close },
       h("div", { class: "modal", onClick: (e) => e.stopPropagation() },
-        h("input", { class: "search-in", placeholder: "Cerca…", value: sh.query || "", autofocus: true,
-          oninput: (e) => A().setSheetQuery(e.target.value) }),
+        // la ricerca filtra dal vivo ma NON passa dallo store: aggiorna
+        // solo la lista sotto, senza toccare il campo che stai scrivendo
+        (() => {
+          const input = h("input", { class: "search-in", placeholder: "Cerca…", autofocus: true });
+          input.value = sh.query || "";
+          input.addEventListener("input", () => {
+            const q2 = input.value.toLowerCase();
+            const box = input.parentElement.querySelector(".mlist");
+            if (!box) return;
+            box.replaceChildren(...Object.values(foods)
+              .filter((f) => !q2 || (f.label || "").toLowerCase().includes(q2))
+              .slice(0, 40)
+              .map((f) => h("div", { class: "srow", onClick: () => A().addFoodToMeal(slot, f.id) },
+                h("span", { class: "em" }, f.emoji || "🍽️"),
+                h("span", { class: "nm" }, f.label),
+                h("span", { class: "kc" }, f.kcal + " kcal"))));
+          });
+          return input;
+        })(),
         h("div", { class: "mlist" },
           list.map((f) => h("div", { class: "srow", onClick: () => A().addFoodToMeal(slot, f.id) },
             h("span", { class: "em" }, f.emoji || "🍽️"),
@@ -241,12 +258,12 @@
       h("div", { class: "modal gmodal", onClick: (e) => e.stopPropagation() },
         h("div", { class: "gname" }, f.label || sh.food),
         h("div", { class: "ginput" },
-          h("input", { class: "gnum", type: "number", inputMode: "numeric", min: "0", step: "1",
+          field({ class: "gnum", type: "number", inputMode: "numeric", min: "0", step: "1",
             value: sh.value, autofocus: true,
-            oninput: (e) => A().setGramsValue(e.target.value),
-            onkeydown: (e) => { if (e.key === "Enter") A().confirmGrams(); } }),
+            onCommit: (v) => A().setGramsValue(v) }),
           h("span", { class: "gunit" }, "g")),
-        h("button", { class: "go", onClick: () => A().confirmGrams() }, icon("check", 18, 2.6)),
+        h("button", { class: "go", "aria-label": "Conferma grammatura",
+          onClick: () => A().confirmGrams() }, icon("check", 18, 2.6)),
       ))];
   }
 
@@ -290,17 +307,19 @@
     if (!sh || sh.type !== "foodedit") return null;
     const d = sh.draft;
     const close = () => A().closeSheet && A().closeSheet();
+    // campi non controllati: si digita liberamente, il valore entra nel draft
+    // all'uscita dal campo (niente ridisegno a ogni tasto)
     const num = (label, key) => h("label", { class: "fld" },
       h("span", {}, label),
-      h("input", { type: "number", inputMode: "decimal", value: d[key] ?? "",
-        oninput: (e) => A().setDraft({ [key]: e.target.value }) }));
+      field({ type: "number", inputMode: "decimal", value: d[key] ?? "",
+        onCommit: (v) => A().setDraftQuiet({ [key]: v }) }));
     return [h("div", { class: "scrim", onClick: close },
       h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
         h("div", { class: "erow" },
-          h("input", { class: "fld emoji", value: d.emoji || "", placeholder: "🍽️",
-            oninput: (e) => A().setDraft({ emoji: e.target.value }) }),
-          h("input", { class: "fld grow", value: d.label, placeholder: "Nome",
-            oninput: (e) => A().setDraft({ label: e.target.value }) })),
+          field({ class: "fld emoji", value: d.emoji || "", placeholder: "🍽️", selectAll: false,
+            onCommit: (v) => A().setDraftQuiet({ emoji: v }) }),
+          field({ class: "fld grow", value: d.label, placeholder: "Nome",
+            onCommit: (v) => A().setDraftQuiet({ label: v }) })),
         h("div", { class: "erow four" }, num("kcal", "kcal"), num("C", "carbs"), num("P", "protein"), num("F", "fat")),
         h("div", { class: "erow" },
           h("div", { class: "seg" },
@@ -322,8 +341,8 @@
     const close = () => A().closeSheet && A().closeSheet();
     return [h("div", { class: "scrim", onClick: close },
       h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
-        h("input", { class: "fld grow", value: d.label, placeholder: "Nome blocco",
-          oninput: (e) => A().setDraft({ label: e.target.value }) }),
+        field({ class: "fld grow", value: d.label, placeholder: "Nome blocco",
+          onCommit: (v) => A().setDraftQuiet({ label: v }) }),
         h("div", { class: "seg four" },
           ["colazione", "pranzo", "merenda", "cena"].map((s) =>
             h("button", { class: d.slot === s ? "on" : "", onClick: () => A().setDraft({ slot: s }) }, SLOT_NAME[s].slice(0, 3)))),
@@ -350,9 +369,9 @@
     const busy = state.aiBusy;
     return [h("div", { class: "scrim", onClick: busy ? () => {} : close },
       h("div", { class: "modal", onClick: (e) => e.stopPropagation() },
-        h("textarea", { class: "field", rows: 3, disabled: busy,
+        field({ multiline: true, class: "field", rows: 3, disabled: busy, selectAll: false,
           placeholder: "Es. settimana senza latticini, stanco della pasta…",
-          oninput: (e) => A().setSheetText(e.target.value) }, sh.text || ""),
+          value: sh.text || "", onCommit: (v) => A().setSheetTextQuiet(v) }),
         h("button", { class: "go" + (busy ? " busy" : ""), disabled: busy, "aria-label": "Componi la settimana con AI",
           onClick: () => A().aiComposeWeek(sh.text || "") },
           icon("sparkles", 18, 2.2)),
@@ -367,13 +386,13 @@
     const busy = sh.busy;
     const num = (label, key) => h("label", { class: "fld" },
       h("span", {}, label),
-      h("input", { type: "number", inputMode: "numeric", min: "0", value: sh.vals[key],
-        oninput: (e) => A().setFreeMealVal(key, e.target.value) }));
+      field({ type: "number", inputMode: "numeric", min: "0", value: sh.vals[key],
+        onCommit: (v) => A().setFreeMealVal(key, v) }));
     return [h("div", { class: "scrim", onClick: busy ? () => {} : close },
       h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
-        h("textarea", { class: "field", rows: 2, disabled: busy,
+        field({ multiline: true, class: "field", rows: 2, disabled: busy, selectAll: false,
           placeholder: "Cosa hai mangiato?", autofocus: true,
-          oninput: (e) => A().setSheetText(e.target.value) }, sh.text || ""),
+          value: sh.text || "", onCommit: (v) => A().setSheetTextQuiet(v) }),
         sh.manual && h("div", { class: "erow four" }, num("kcal", "kcal"), num("C", "carbs"), num("P", "protein"), num("F", "fat")),
         h("div", { class: "erow actions" },
           sh.isCustom && h("button", { class: "icobtn", "aria-label": "Ripristina pasto pianificato",
@@ -408,7 +427,7 @@
     return [h("div", { class: "scrim", onClick: close },
       h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
         h("label", { class: "fld" }, h("span", {}, "Supermercato"),
-          h("input", { value: sh.supermarket, oninput: (e) => A().setSettingsVal({ supermarket: e.target.value }) })),
+          field({ value: sh.supermarket, onCommit: (v) => A().setSettingsValQuiet({ supermarket: v }) })),
         h("label", { class: "fld" }, h("span", {}, "Proposta dal"),
           h("div", { class: "seg four" }, DAYS.map(([v, lab]) =>
             h("button", { class: String(sh.weekday) === v ? "on" : "", onClick: () => A().setSettingsVal({ weekday: Number(v) }) }, lab)))),
@@ -662,5 +681,6 @@
     profilo: viewGestione,
     activeSlot,
     SLOT_NAME,
+    overlays, // usata dal render per aggiornare i modali senza toccare la schermata
   };
 })();

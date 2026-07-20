@@ -55,18 +55,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);
 .head .spacer{margin-left:auto}
 
 /* ---- calbox (calorie + macro) ---- */
-.calbox{margin:2px 16px 12px;border-radius:24px;overflow:hidden;box-shadow:rgba(0,0,0,.3) 0 3px 7px -3px}
-.calbox .top{display:flex;align-items:center;justify-content:space-between;padding:13px 18px 11px}
-.calbox .lab{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:1px;
-  color:var(--mut);text-transform:uppercase;margin-bottom:3px}
-.calbox .n{font-family:'Archivo';font-weight:900;font-size:44px;letter-spacing:-1.5px;line-height:.84}
-.calbox .n span{font-size:17px;font-weight:600;color:var(--mut);letter-spacing:0}
-.calbox .unit{font-size:13px;color:var(--mut);font-weight:600;margin-top:3px}
-.calbox .ring{width:74px;height:74px;position:relative;flex:0 0 74px}
-.calbox .ring svg{transform:rotate(-90deg);width:74px;height:74px}
-.calbox .ring .p{position:absolute;inset:0;display:grid;place-items:center;font-family:'Archivo';font-weight:800;font-size:17px;color:var(--acc)}
-.macro{background:var(--anchor);border-radius:18px;padding:14px 16px;color:#F3F0E6}
-.mrow{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+.calbox{margin:2px 16px 14px;border-radius:26px;overflow:hidden;box-shadow:rgba(0,0,0,.3) 0 3px 7px -3px}
+.calbox .top{display:flex;align-items:center;justify-content:space-between;padding:17px 20px 15px}
+.calbox .lab{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:1px;
+  color:var(--mut);text-transform:uppercase;margin-bottom:4px}
+.calbox .n{font-family:'Archivo';font-weight:900;font-size:50px;letter-spacing:-2px;line-height:.82}
+.calbox .n span{font-size:19px;font-weight:600;color:var(--mut);letter-spacing:0}
+.calbox .unit{font-size:15px;color:var(--mut);font-weight:600;margin-top:4px}
+.calbox .ring{width:86px;height:86px;position:relative;flex:0 0 86px}
+.calbox .ring svg{transform:rotate(-90deg);width:86px;height:86px}
+.calbox .ring .p{position:absolute;inset:0;display:grid;place-items:center;font-family:'Archivo';font-weight:800;font-size:19px;color:var(--acc)}
+.macro{background:var(--anchor);border-radius:20px;padding:18px 20px;color:#F3F0E6}
+.mrow{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .mrow:last-child{margin-bottom:0}
 .mrow .ic{width:15px;flex:0 0 15px;color:#ffffffaa;display:grid;place-items:center}
 .mrow .name{font-size:10px;font-weight:700;letter-spacing:.5px;width:34px;color:#ffffffcc}
@@ -170,7 +170,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);
   box-shadow:0 6px 20px -6px #0007;animation:up .25s ease forwards}
 
 /* ---- nav pillola ---- */
-nav{margin:4px 16px calc(14px + env(safe-area-inset-bottom));border-radius:30px;display:flex;justify-content:space-around;padding:12px}
+/* pillola vera: staccata dal fondo, non una barra piena */
+nav{margin:4px 16px calc(14px + env(safe-area-inset-bottom));border-radius:30px;display:flex;justify-content:space-around;padding:12px;
+  background:rgba(255,255,255,.62);border-top:1px solid rgba(255,255,255,.8);
+  box-shadow:rgba(0,0,0,.16) 0 6px 18px -8px}
 nav button{background:none;border:none;color:var(--mut);opacity:.6;cursor:pointer;display:flex;flex-direction:column;
   align-items:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.3px;font-family:inherit}
 nav button.on{color:var(--acc);opacity:1}
@@ -219,7 +222,7 @@ nav button.on{color:var(--acc);opacity:1}
 .gtabs button.on{background:var(--ink);color:var(--bg)}
 .glist{display:flex;flex-direction:column;gap:9px;padding:0 16px 12px}
 .gslot{font-family:'Archivo';font-weight:800;font-size:12px;letter-spacing:.5px;text-transform:uppercase;
-  color:var(--mut);padding:8px 4px 2px}
+  color:var(--mut);padding:14px 20px 8px}
 .gitem{display:flex;align-items:center;gap:12px;border-radius:16px;padding:11px 14px;cursor:pointer}
 .gitem.off{opacity:.45}
 .gem{font-size:22px;width:28px;text-align:center;flex:0 0 28px}

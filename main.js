@@ -229,8 +229,20 @@
       const b = store.get().blocks[id];
       if (b) store.set({ sheet: { type: "blockedit", draft: JSON.parse(JSON.stringify(b)), isNew: false } });
     },
+    // usato dai bottoni (sfuso/fisso, fascia): cambia la forma del modal → ridisegna
     setDraft(patch) { store.set((s) => ({ sheet: { ...s.sheet, draft: { ...s.sheet.draft, ...patch } } })); },
+    // usato dai CAMPI di testo: aggiorna il draft SENZA ridisegnare, così il
+    // campo che stai compilando non viene mai ricreato sotto le dita
+    setDraftQuiet(patch) {
+      const s = store.get();
+      if (!s.sheet || !s.sheet.draft) return;
+      Object.assign(s.sheet.draft, patch);
+    },
     saveDraft() {
+      // i campi sono non-controllati: forzo il commit di quello ancora attivo
+      // (su mobile il tap sul ✓ può non far scattare il blur)
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) active.blur();
       const s = store.get();
       const sh = s.sheet;
       if (!sh || !sh.draft) return;
@@ -355,6 +367,8 @@
     closeSheet() { store.set({ sheet: null }); },
     setSheetQuery(query) { store.set((s) => ({ sheet: { ...s.sheet, query } })); },
     setSheetText(text) { store.set((s) => ({ sheet: { ...s.sheet, text } })); },
+    // varianti "quiet": aggiornano il modal aperto senza ridisegnare (usate dai campi)
+    setSheetTextQuiet(text) { const s = store.get(); if (s.sheet) s.sheet.text = text; },
 
     addFoodToMeal(slot, foodId) {
       editMeal(slot, (items) => items.some((i) => i.food === foodId) ? items : items.concat([{ food: foodId }]));
@@ -373,12 +387,15 @@
     promptGrams(slot, foodId, current) {
       store.set({ sheet: { type: "grams", slot, food: foodId, value: String(current || "") } });
     },
-    setGramsValue(value) { store.set((s) => ({ sheet: { ...s.sheet, value } })); },
+    setGramsValue(value) { const s = store.get(); if (s.sheet) s.sheet.value = value; },
     confirmGrams() {
       const s = store.get();
       const sh = s.sheet;
       if (!sh || sh.type !== "grams") return;
-      const g = Math.max(0, Math.round(Number(sh.value)));
+      // leggo il campo VIVO: su mobile il tap sul ✓ può non far scattare il blur
+      const live = document.querySelector(".gmodal .gnum");
+      const raw = live ? live.value : sh.value;
+      const g = Math.max(0, Math.round(Number(raw)));
       store.set({ sheet: null });
       if (!isFinite(g)) return;
       editMeal(sh.slot, (items) => items.map((i) => i.food === sh.food ? { ...i, grams: g } : i));
@@ -391,8 +408,10 @@
       store.set({ sheet: { type: "freemeal", slot, text: (b && b.custom && b.custom.label) || "", manual: false, busy: false,
         vals: { kcal: "", protein: "", carbs: "", fat: "" }, isCustom: !!(b && b.custom) } });
     },
-    setFreeMealVal(key, value) { store.set((s) => ({ sheet: { ...s.sheet, vals: { ...s.sheet.vals, [key]: value } } })); },
+    setFreeMealVal(key, value) { const s = store.get(); if (s.sheet && s.sheet.vals) s.sheet.vals[key] = value; },
     async submitFreeMeal() {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) active.blur();
       const s = store.get();
       const sh = s.sheet;
       if (!sh || sh.type !== "freemeal" || !(sh.text || "").trim()) return;
@@ -407,6 +426,8 @@
       }
     },
     confirmFreeMealManual() {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) active.blur();
       const s = store.get();
       const sh = s.sheet;
       if (!sh || sh.type !== "freemeal") return;
@@ -467,7 +488,10 @@
       store.set({ sheet: { type: "settings", supermarket: pp.supermarket, weekday: pp.weekday } });
     },
     setSettingsVal(patch) { store.set((st) => ({ sheet: { ...st.sheet, ...patch } })); },
+    setSettingsValQuiet(patch) { const s = store.get(); if (s.sheet) Object.assign(s.sheet, patch); },
     saveSettings() {
+      const active = document.activeElement;
+      if (active && active.tagName === "INPUT") active.blur();
       const s = store.get();
       const sh = s.sheet;
       if (!sh || sh.type !== "settings") return;
@@ -612,23 +636,121 @@
   // tinta fissa magenta ovunque (decisione: la fascia si vede dalla card)
   document.body.className = "theme-magenta";
 
-  function render(state) {
-    if (!state.booted) return; // boot screen già in HTML
+  // Il render ricostruisce la vista, ma NON deve far perdere all'utente il
+  // punto in cui si trova: preserva la posizione di scroll e il campo attivo
+  // (con selezione e cursore). Inoltre è accorpato in un frame: N azioni
+  // ravvicinate = un solo ridisegno, non N.
+  let renderQueued = false;
+  let lastState = null;
+
+  function captureFocus() {
+    const el = document.activeElement;
+    if (!el || !root.contains(el)) return null;
+    const isField = el.tagName === "INPUT" || el.tagName === "TEXTAREA";
+    if (!isField) return null;
+    // identificatore stabile del campo: classe + posizione tra i pari
+    const peers = [...root.querySelectorAll(el.tagName.toLowerCase())];
+    return { idx: peers.indexOf(el), tag: el.tagName.toLowerCase(),
+      start: el.selectionStart, end: el.selectionEnd, value: el.value };
+  }
+  function restoreFocus(f) {
+    if (!f || f.idx < 0) return;
+    const peers = [...root.querySelectorAll(f.tag)];
+    const el = peers[f.idx];
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    // il valore digitato non ancora "committato" non deve sparire
+    if (typeof f.value === "string" && el.value !== f.value) el.value = f.value;
+    try { if (f.start != null) el.setSelectionRange(f.start, f.end); } catch (e) {}
+  }
+
+  // La posizione di scroll viene tracciata IN CONTINUO (evento scroll) e non
+  // letta al momento del ridisegno: quando paint() gira, il DOM può già essere
+  // stato sostituito e il valore letto sarebbe 0.
+  const scrollByRoute = {};
+  root.addEventListener("scroll", (e) => {
+    const el = e.target;
+    if (el && el.classList && el.classList.contains("scroll")) {
+      scrollByRoute[store.get().route] = el.scrollTop;
+    }
+  }, true); // capture: l'evento scroll non fa bubbling
+
+  // Cosa distingue due stati dal punto di vista della SCHERMATA sotto (esclusi
+  // i modali, che sono overlay). Se questa firma non cambia, la vista non va
+  // ricostruita: si aggiorna solo l'overlay. È ciò che tiene vivi scroll,
+  // focus e posizione quando apri/chiudi un modal.
+  function viewSignature(s) {
+    return [s.route, s.gestTab, s.editingSlot, s.today && s.today.blocks.map((b) => b.slot + ":" + b.blockId + ":" + b.state + ":" + (b.items || []).map((i) => i.grams).join(",")).join("|"),
+      s.today && (s.today.adjustments || []).length, [...(s.openSlots || [])].join(","),
+      Object.keys(s.foods || {}).length, Object.keys(s.blocks || {}).length,
+      s.week && s.week.days.map((d) => d.dayType + Object.values(d.selection || {}).join("")).join(""),
+      s.nextWeek && s.nextWeek.id, s.proposal && s.proposal.block.id,
+      s.sync && s.sync.pending + ":" + !!s.sync.error, s.toast, s.aiBusy,
+      // i valori dei foods/blocks contano per le card (grammature mostrate)
+      JSON.stringify(s.foods && Object.values(s.foods).map((f) => f.label + f.kcal + f.rangeMin + f.rangeMax + f.fixed + f.verified)),
+      JSON.stringify(s.blocks && Object.values(s.blocks).map((b) => b.label + b.slot + b.enabled + (b.items || []).map((i) => i.food).join(",")))].join("§");
+  }
+
+  let lastSignature = null;
+  let lastPhone = null;
+
+  function paint(state) {
+    const prevTop = scrollByRoute[state.route] || 0;
+    const focus = captureFocus();
+
+    // solo il modal è cambiato → aggiorno gli overlay, la schermata resta intatta
+    const sig = viewSignature(state);
+    if (lastPhone && lastPhone.isConnected && sig === lastSignature) {
+      lastPhone.querySelectorAll(".scrim, .toast").forEach((n) => n.remove());
+      VIEWS.overlays(state, lastPhone);
+      restoreFocus(focus);
+      return;
+    }
+    lastSignature = sig;
+
     const view = VIEWS[state.route] || VIEWS.oggi;
     const phone = view(state);
+    lastPhone = phone;
     root.replaceChildren(phone);
-    // side-effect di render: porta in vista la card appena aperta
+
+    // rimetti l'utente dove stava: scroll + campo attivo.
+    // Il ripristino va fatto DOPO che il browser ha calcolato l'altezza del
+    // contenuto, altrimenti scrollTop viene troncato a 0 (contenuto non ancora
+    // impaginato). Lo faccio subito e poi di nuovo al frame successivo.
+    const next = root.querySelector(".scroll");
+    if (next && prevTop) {
+      next.scrollTop = prevTop;
+      requestAnimationFrame(() => { if (next.isConnected && next.scrollTop !== prevTop) next.scrollTop = prevTop; });
+    }
+    restoreFocus(focus);
+
     if (state.scrollTo) {
       const el = root.querySelector(`[data-slot="${state.scrollTo}"]`);
       if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
-      // consuma il flag senza ri-renderizzare in loop
       store.get().scrollTo = null;
     }
+  }
+
+  function render(state) {
+    if (!state.booted) return; // boot screen già in HTML
+    lastState = state;
+    if (renderQueued) return;  // più set() nello stesso tick = un solo ridisegno
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; paint(lastState); });
   }
   store.subscribe(render);
 
   // scritture fallite: riprova quando l'app torna in primo piano
   window.addEventListener("focus", () => api.sync && api.sync.flush());
+
+  // Escape chiude il modal aperto (su desktop è un'aspettativa base;
+  // su telefono non fa danno)
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const s = store.get();
+    if (s.sheet) { e.preventDefault(); store.set({ sheet: null }); }
+    else if (s.editingSlot) actions.toggleEditMeal(s.editingSlot);
+  });
 
   // ---- boot ----
   (async () => {

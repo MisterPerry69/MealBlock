@@ -83,5 +83,39 @@
     return svg;
   }
 
-  window.MB_UI = { h, icon, ring };
+  // ---- campo NON controllato ----
+  // Regola dell'app: mentre digiti non deve succedere NIENTE (niente store.set,
+  // niente ridisegno). Il valore iniziale si imposta una volta sola; il valore
+  // digitato si legge all'uscita dal campo (blur) o su Invio.
+  // `onCommit(value, el)` riceve il testo finale.
+  function field(props) {
+    const { value, onCommit, selectAll = true, multiline, type, ...rest } = props || {};
+    // I campi numerici sono type="text" + inputMode: su type="number" Chrome
+    // non espone la selezione (selectionStart è null), quindi "tap = seleziona
+    // tutto" non funzionerebbe. inputMode tiene la tastiera numerica sul telefono.
+    const numeric = type === "number";
+    const el = h(multiline ? "textarea" : "input", rest);
+    if (!multiline) {
+      el.type = numeric ? "text" : (type || "text");
+      if (numeric) { el.inputMode = props.inputMode || "decimal"; el.autocomplete = "off"; }
+    }
+    el.value = value == null ? "" : String(value);
+    // Tap sul campo = seleziono tutto (correggere 40→30 senza cancellare a mano).
+    // La selezione va fatta SUBITO: differirla di un frame significa che il
+    // primo carattere digitato la annulla e finisce accodato al valore vecchio.
+    if (selectAll) {
+      const selectNow = () => { try { el.setSelectionRange(0, el.value.length); } catch (e) {} };
+      el.addEventListener("focus", selectNow);
+      // il click su un campo già a fuoco riposiziona il cursore: riseleziono
+      el.addEventListener("mouseup", (e) => e.preventDefault());
+    }
+    const commit = () => onCommit && onCommit(el.value, el);
+    el.addEventListener("blur", commit);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !props.multiline) { e.preventDefault(); el.blur(); }
+    });
+    return el;
+  }
+
+  window.MB_UI = { h, icon, ring, field };
 })();
