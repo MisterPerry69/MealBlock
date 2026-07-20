@@ -51,18 +51,6 @@
     );
   }
 
-  // ---- barra riadattamenti (chiudibile): cosa ha ricalcolato il solver ----
-  function adjustBar(today, foods) {
-    const adjs = today.adjustments || [];
-    if (!adjs.length) return null;
-    const lines = window.MB_ADJUST.formatAdjustments(adjs, foods, SLOT_NAME);
-    return h("div", { class: "adjbar glass" },
-      h("span", { class: "aic" }, icon("refresh-cw", 13, 2.4)),
-      h("div", { class: "alines" }, lines.map((t) => h("div", {}, t))),
-      h("button", { class: "axbtn", "aria-label": "Chiudi", onClick: () => A().dismissAdjustments() }, icon("x", 13, 2.6)),
-    );
-  }
-
   // ---- card proposta pre-spesa (vista Settimana) ----
   function proposalCard(state) {
     const p = state.proposal;
@@ -201,7 +189,7 @@
       ["oggi", "target", "DIARIO"],
       ["settimana", "calendar-days", "CALENDARIO"],
       ["lista", "shopping-basket", "LISTA"],
-      ["profilo", "layout-grid", "GESTIONE"],
+      ["profilo", "layout-grid", "BLOCKS"],
     ];
     return h("nav", { class: "glass" },
       items.map(([r, ic, lab]) =>
@@ -266,20 +254,33 @@
   function blockPickerModal(state) {
     const sh = state.sheet;
     if (!sh || sh.type !== "blockpicker") return null;
-    const { blocks, foods } = state;
+    const { blocks, foods, prefs } = state;
     const close = () => A().closeSheet && A().closeSheet();
+    const day = state.week && state.week.days.find((d) => d.date === sh.date);
+    const dayType = (day && day.dayType) || "OFF";
     const list = Object.values(blocks).filter((b) => b.slot === sh.slot && b.enabled !== false);
     return [h("div", { class: "scrim", onClick: close },
       h("div", { class: "modal", onClick: (e) => e.stopPropagation() },
         h("div", { class: "mlist" },
           list.map((b) => {
-            const f = foods[b.items[0] && b.items[0].food];
+            const items = window.MB_SOLVER.typicalItems(b, { foods, blocks, prefs, dayType });
+            const kcal = window.MB_SOLVER.calcMacros(items, foods).kcal;
             const current = sh.current === b.id;
-            return h("div", { class: "srow" + (current ? " cur" : ""), onClick: () => A().setDayBlock(sh.date, sh.slot, b.id) },
-              h("span", { class: "em" }, (f && f.emoji) || "🍽️"),
-              h("span", { class: "nm" }, b.label),
-              current && h("span", { class: "kc" }, icon("check", 16, 2.6)));
+            return h("div", { class: "brow" + (current ? " cur" : ""), onClick: () => A().setDayBlock(sh.date, sh.slot, b.id) },
+              h("div", { class: "btop" },
+                h("span", { class: "bname" }, b.label),
+                current ? h("span", { class: "bcheck" }, icon("check", 15, 2.6)) : h("span", { class: "bkcal" }, kcal + " kcal"),
+              ),
+              h("div", { class: "bitems" },
+                items.map((i) => h("span", { class: "bitem" }, i.label + " " + i.grams + "g")),
+              ),
+              b.recipe && h("div", { class: "brecipe" }, b.recipe),
+            );
           })),
+        // via d'uscita: con poche (o una sola) alternativa il picker sarebbe
+        // un vicolo cieco — da qui si crea un blocco nuovo per questa fascia
+        h("button", { class: "go", "aria-label": "Nuovo blocco per questa fascia",
+          onClick: () => A().newBlockForSlot(sh.slot) }, icon("plus", 18, 2.6)),
       ))];
   }
 
@@ -385,6 +386,19 @@
       ))];
   }
 
+  // ---- modal CENTRALE: riepilogo riadattamenti ----
+  function adjustModal(state) {
+    const sh = state.sheet;
+    if (!sh || sh.type !== "adjust") return null;
+    const close = () => A().closeAdjModal();
+    return [h("div", { class: "scrim", onClick: close },
+      h("div", { class: "modal adjmodal", onClick: (e) => e.stopPropagation() },
+        h("div", { class: "adjhead" }, icon("refresh-cw", 15, 2.4)),
+        h("div", { class: "adjlines" }, sh.lines.map((t) => h("div", {}, t))),
+        h("button", { class: "go", "aria-label": "Ho capito", onClick: close }, icon("check", 18, 2.6)),
+      ))];
+  }
+
   // ---- modal CENTRALE: impostazioni proposta ----
   function settingsModal(state) {
     const sh = state.sheet;
@@ -411,6 +425,7 @@
     const be = blockEditModal(state); if (be) phone.append(...be);
     const ai = aiModal(state); if (ai) phone.append(...ai);
     const fm = freeMealModal(state); if (fm) phone.append(...fm);
+    const am = adjustModal(state); if (am) phone.append(...am);
     const st2 = settingsModal(state); if (st2) phone.append(...st2);
     if (state.toast) phone.append(h("div", { class: "toast" }, state.toast));
   }
@@ -441,8 +456,6 @@
     } else {
       // le barre mostrano il MANGIATO (pasti spuntati) vs target
       inner.append(calbox(today.eaten || { kcal: 0, protein: 0, carbs: 0, fat: 0 }, today.target));
-      const ab = adjustBar(today, foods);
-      if (ab) inner.append(ab);
       inner.append(timeline(today, foods, state.openSlots || new Set(), state.editingSlot, state.blocks));
     }
 
@@ -555,55 +568,73 @@
     return phone;
   }
 
-  // ---- vista GESTIONE (alimenti + blocchi + target) ----
+  // ---- vista BLOCKS (blocchi + alimenti) ----
   function viewGestione(state) {
     const { foods, blocks, prefs } = state;
     const phone = h("div", { class: "phone theme-magenta" });
     const scroll = h("div", { class: "screen" }, h("div", { class: "scroll" }));
     const inner = scroll.firstChild;
-    const tab = state.gestTab || "alimenti";
+    const tab = state.gestTab || "blocchi";
 
     inner.append(h("div", { class: "head" },
-      h("h1", {}, tab.toUpperCase()),
+      h("h1", {}, "BLOCKS"),
       h("div", { class: "spacer" }),
       syncBadge(state),
       h("button", { class: "icobtn", "aria-label": "Impostazioni", onClick: () => A().openSettings && A().openSettings() }, icon("settings", 19, 2.2)),
-      h("button", { class: "icobtn", title: "Nuovo", onClick: () => A().newEntity && A().newEntity(tab) }, icon("plus", 20, 2.4)),
+      h("button", { class: "icobtn", "aria-label": tab === "blocchi" ? "Nuovo blocco" : "Nuovo alimento",
+        onClick: () => A().newEntity && A().newEntity(tab) }, icon("plus", 20, 2.4)),
     ));
 
-    // switch ALIMENTI / BLOCCHI
+    // switch BLOCCHI / ALIMENTI (i blocchi sono il livello principale)
     inner.append(h("div", { class: "gtabs" },
-      [["alimenti", "Alimenti"], ["blocchi", "Blocchi"]].map(([t, lab]) =>
+      [["blocchi", "Blocchi"], ["alimenti", "Alimenti"]].map(([t, lab]) =>
         h("button", { class: t === tab ? "on" : "", onClick: () => A().setGestTab(t) }, lab))));
 
-    if (tab === "alimenti") {
-      const list = Object.values(foods).sort((a, b) => (a.label || "").localeCompare(b.label || ""));
-      inner.append(h("div", { class: "glist" },
-        list.map((f) => h("div", { class: "gitem glass", onClick: () => A().editFood(f.id) },
-          h("span", { class: "gem" }, f.emoji || "🍽️"),
-          h("div", { class: "gmain" },
-            h("span", { class: "gname2" }, (f.verified === false ? "~ " : "") + f.label),
-            h("span", { class: "gsub" },
-              f.kcal + " kcal · C" + f.carbs + " P" + f.protein + " F" + f.fat,
-            )),
-          f.verified === false && h("button", { class: "icobtn mini", "aria-label": "Conferma macro dall'etichetta",
-            onClick: (e) => { e.stopPropagation(); A().confirmFood(f.id); } }, icon("check", 15, 2.6)),
-          h("span", { class: "gkind" }, f.kind === "fisso" ? (f.fixed + " g") : (f.rangeMin + "–" + f.rangeMax)),
-        ))));
-    } else {
+    if (tab === "blocchi") {
       const SLOTS = ["colazione", "pranzo", "merenda", "cena"];
-      inner.append(h("div", { class: "glist" },
-        SLOTS.map((s) => [
-          h("div", { class: "gslot" }, SLOT_NAME[s]),
-          Object.values(blocks).filter((b) => b.slot === s).map((b) =>
-            h("div", { class: "gitem glass" + (b.enabled === false ? " off" : ""), onClick: () => A().editBlock(b.id) },
-              h("div", { class: "gmain" },
-                h("span", { class: "gname2" }, b.label),
-                h("span", { class: "gsub" }, b.items.map((it) => (foods[it.food] || {}).label || it.food).join(" · "))),
-              h("span", { class: "gtoggle" + (b.enabled === false ? "" : " on"),
-                onClick: (e) => { e.stopPropagation(); A().toggleBlockEnabled(b.id); } }),
-            )),
-        ].flat())));
+      for (const s of SLOTS) {
+        const list = Object.values(blocks).filter((b) => b.slot === s);
+        if (!list.length) continue;
+        inner.append(h("div", { class: "gslot" }, SLOT_NAME[s]));
+        inner.append(h("div", { class: "gcards" },
+          list.map((b) => {
+            const items = window.MB_SOLVER.typicalItems(b, { foods, blocks, prefs });
+            const m = window.MB_SOLVER.calcMacros(items, foods);
+            const emoji = (foods[b.items[0] && b.items[0].food] || {}).emoji || "🍽️";
+            return h("div", { class: "gcard" + (b.enabled === false ? " off" : ""), onClick: () => A().editBlock(b.id) },
+              h("div", { class: "gctop" },
+                h("span", { class: "gcem" }, emoji),
+                h("span", { class: "gtoggle" + (b.enabled === false ? "" : " on"),
+                  onClick: (e) => { e.stopPropagation(); A().toggleBlockEnabled(b.id); } }),
+              ),
+              h("div", { class: "gcname" }, b.label),
+              h("div", { class: "gcsub" }, items.map((i) => i.label + " " + i.grams + "g").join(" · ")),
+              h("div", { class: "gchips" },
+                h("span", { class: "chip k" }, m.kcal + " kcal"),
+                h("span", { class: "chip c" }, "C " + Math.round(m.carbs)),
+                h("span", { class: "chip p" }, "P " + Math.round(m.protein)),
+                h("span", { class: "chip f" }, "F " + Math.round(m.fat)),
+              ),
+            );
+          })));
+      }
+    } else {
+      const list = Object.values(foods).sort((a, b) => (a.label || "").localeCompare(b.label || ""));
+      inner.append(h("div", { class: "gcards" },
+        list.map((f) => h("div", { class: "gcard", onClick: () => A().editFood(f.id) },
+          h("div", { class: "gctop" },
+            h("span", { class: "gcem" }, f.emoji || "🍽️"),
+            f.verified === false && h("button", { class: "icobtn mini", "aria-label": "Conferma macro dall'etichetta",
+              onClick: (e) => { e.stopPropagation(); A().confirmFood(f.id); } }, icon("check", 15, 2.6)),
+          ),
+          h("div", { class: "gcname" }, (f.verified === false ? "~ " : "") + f.label),
+          h("div", { class: "gcsub" }, f.kcal + " kcal/100g · " + (f.kind === "fisso" ? f.fixed + "g" : f.rangeMin + "–" + f.rangeMax + "g")),
+          h("div", { class: "gchips" },
+            h("span", { class: "chip c" }, "C " + f.carbs),
+            h("span", { class: "chip p" }, "P " + f.protein),
+            h("span", { class: "chip f" }, "F " + f.fat),
+          ),
+        ))));
     }
 
     phone.append(scroll, nav(state));
@@ -630,5 +661,6 @@
     lista: viewLista,
     profilo: viewGestione,
     activeSlot,
+    SLOT_NAME,
   };
 })();

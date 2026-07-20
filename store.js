@@ -36,6 +36,7 @@
     week: null,             // { weekStart, days:[...] }
     today: null,            // giorno corrente (riferimento a un giorno di week)
     sheet: null,            // modale aperto: { type, ...payload } | null
+    gestTab: "blocchi",     // Gestione apre sui BLOCCHI (gli alimenti sono il livello sotto)
     toast: null,            // messaggio effimero
   });
 

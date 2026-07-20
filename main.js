@@ -63,6 +63,35 @@
     return { ...res, selection, eaten, adjustments, activeSlot: withState.find((b) => b.state === "active")?.slot || null, blocks: withState };
   }
 
+  // unisce due liste di riadattamenti per slot: durante una modifica il solver
+  // ricalcola a ogni grammo, ma all'utente interessa il RISULTATO complessivo.
+  function mergeAdjustments(prevList, nextList) {
+    const by = {};
+    for (const a of prevList || []) by[a.slot] = { slot: a.slot, replaced: a.replaced, changes: [...a.changes] };
+    for (const a of nextList || []) {
+      const cur = by[a.slot];
+      if (!cur) { by[a.slot] = { slot: a.slot, replaced: a.replaced, changes: [...a.changes] }; continue; }
+      if (a.replaced) cur.replaced = { from: (cur.replaced && cur.replaced.from) || a.replaced.from, to: a.replaced.to };
+      for (const c of a.changes) {
+        const old = cur.changes.find((x) => x.food === c.food);
+        // il "da" è il primo valore visto, il "a" è l'ultimo: il netto della sessione
+        if (old) old.to = c.to; else cur.changes.push({ ...c });
+      }
+      // scarta le voci tornate al punto di partenza
+      cur.changes = cur.changes.filter((c) => c.from !== c.to);
+    }
+    return Object.values(by).filter((a) => a.replaced || a.changes.length);
+  }
+
+  // riepilogo immediato (fuori dalla modifica): apre il modal se c'è qualcosa
+  function showAdjustments(today) {
+    const s = store.get();
+    const adjs = (today && today.adjustments) || [];
+    if (!adjs.length) return;
+    const lines = window.MB_ADJUST.formatAdjustments(adjs, s.foods, window.MB_VIEWS.SLOT_NAME);
+    if (lines.length) store.set({ sheet: { type: "adjust", lines } });
+  }
+
   // ---- validazione lato client dell'output AI (seconda barriera) ----
   function enabledBySlot(blocks) {
     const by = { colazione: [], pranzo: [], merenda: [], cena: [] };
@@ -131,6 +160,7 @@
       const today = composeTodayFrom({ ...s, today: { ...s.today, blocks } });
       store.set({ today });
       persistDay(today);
+      showAdjustments(today);
       // learner: spuntare un pasto = segnale di gradimento del blocco
       if (nowDone && target) learn({ type: "checkMeal", blockId: target.blockId });
       api.logEvent("checkMeal", { slot, blockId: target && target.blockId, done: nowDone }).catch(() => {});
@@ -151,6 +181,7 @@
       const today = composeToday(s, { dayType, selection: day.selection });
       store.set({ today });
       persistDay(today);
+      showAdjustments(today);
       // riflette il cambio anche nella settimana e salva
       if (s.week) {
         const days = s.week.days.map((d) => d.date === todayIso ? { ...d, dayType, selection: day.selection } : d);
@@ -168,6 +199,7 @@
     dismissAdjustments() {
       store.set((s) => ({ today: s.today && { ...s.today, adjustments: [] } }));
     },
+    closeAdjModal() { store.set({ sheet: null }); },
 
     // ---- settimana ----
     regenerateWeek() {
@@ -184,6 +216,10 @@
     newEntity(tab) {
       if (tab === "alimenti") store.set({ sheet: { type: "foodedit", draft: { id: "", label: "", kcal: 0, carbs: 0, protein: 0, fat: 0, cat: "protein", kind: "sfuso", rangeMin: 50, rangeMax: 200, emoji: "🍽️" }, isNew: true } });
       else store.set({ sheet: { type: "blockedit", draft: { id: "", label: "", slot: "pranzo", items: [], enabled: true }, isNew: true } });
+    },
+    // nuovo blocco già assegnato a una fascia (dal picker del calendario)
+    newBlockForSlot(slot) {
+      store.set({ sheet: { type: "blockedit", draft: { id: "", label: "", slot, items: [], enabled: true }, isNew: true } });
     },
     editFood(id) {
       const f = store.get().foods[id];
@@ -298,13 +334,22 @@
         const wday = days.find((d) => d.date === todayIso);
         store.set((st) => ({ today: composeToday(st, { dayType: wday.dayType, selection: wday.selection }) }));
         persistDay(store.get().today);
+        showAdjustments(store.get().today);
       }
       api.saveWeek(week);
     },
 
     // ---- modifica pasto inline (long-press sulla card aperta) ----
     toggleEditMeal(slot) {
-      store.set((s) => ({ editingSlot: s.editingSlot === slot ? null : slot }));
+      const s = store.get();
+      const closing = s.editingSlot === slot;
+      if (!closing) { store.set({ editingSlot: slot }); return; }
+      // uscita dalla modifica: mostro il riepilogo di TUTTA la sessione
+      const lines = (s.adjPending && s.adjPending.length)
+        ? window.MB_ADJUST.formatAdjustments(s.adjPending, s.foods, window.MB_VIEWS.SLOT_NAME)
+        : [];
+      store.set({ editingSlot: null, adjPending: null,
+        sheet: lines.length ? { type: "adjust", lines } : s.sheet });
     },
     openFoodPicker(slot) { store.set({ sheet: { type: "picker", slot, query: "" } }); },
     closeSheet() { store.set({ sheet: null }); },
@@ -464,7 +509,9 @@
     // era già fuori per conto suo: sarebbe spam a ogni +1g)
     const wasInTarget = s.today.status && s.today.status.inTarget;
     const warn = (wasInTarget && !today.status.inTarget) ? "Scostamento troppo grande per rientrare oggi" : null;
-    store.set({ today, toast: warn });
+    // durante la modifica accumulo i riadattamenti: il riepilogo si mostra
+    // alla chiusura, non a ogni singolo grammo
+    store.set((st) => ({ today, adjPending: mergeAdjustments(st.adjPending, today.adjustments), toast: warn }));
     if (warn) setTimeout(() => store.get().toast === warn && store.set({ toast: null }), 3000);
     persistDay(today);
   }
@@ -478,6 +525,7 @@
     const today = composeToday({ ...s, today: { ...s.today, blocks } });
     store.set({ today });
     persistDay(today);
+    showAdjustments(today);
     api.logEvent("freeMeal", { slot, label: custom.label, estimated: custom.estimated }).catch(() => {});
   }
 

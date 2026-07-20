@@ -259,15 +259,11 @@ label.fld input{width:100%}
 .sync.err { color: #c0392b; opacity: 1; cursor: pointer; }
 @keyframes syncspin { to { transform: rotate(360deg); } }
 
-/* ---- riadattamenti solver ---- */
-.adjbar { display: flex; align-items: flex-start; gap: 8px; margin: 0 16px 6px;
-  padding: 10px 12px; border-radius: 14px; font-size: 13px; font-weight: 600;
-  color: var(--ink); }
-.adjbar .aic, .adjbar .axbtn { color: var(--mut); }
-.adjbar .aic { flex: 0 0 auto; margin-top: 1px; }
-.adjbar .alines { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.adjbar .axbtn { flex: 0 0 auto; border: 0; background: transparent; color: var(--mut);
-  padding: 2px; cursor: pointer; }
+/* ---- riadattamenti solver (riepilogo a fine modifica) ---- */
+.adjmodal { max-width: 320px; gap: 4px; }
+.adjmodal .adjhead { color: var(--acc, #a63f97); display: flex; justify-content: center; padding: 2px 0 8px; }
+.adjmodal .adjlines { display: flex; flex-direction: column; gap: 8px; font-size: 14px;
+  font-weight: 600; color: #2c1329; line-height: 1.4; }
 .card .adj { display: inline-flex; margin-left: 6px; color: var(--mut); opacity: .6; }
 
 /* ---- conti trasparenti nella card ---- */
@@ -299,3 +295,33 @@ nav button.dotted::after { content: ""; position: absolute; top: 6px; right: 18p
 .foods .recipe { font-size: 12.5px; color: var(--mut); font-weight: 600; line-height: 1.45; padding: 6px 2px 2px; }
 .propactions .spacer { flex: 1; }
 .modal .go.busy svg { animation: syncspin 1s linear infinite; }
+
+/* ---- selettore blocco (calendario) ---- */
+.modal .brow { padding: 11px 6px; border-bottom: 1px solid #0000000d; cursor: pointer; }
+.modal .brow:last-child { border-bottom: none; }
+.modal .btop { display: flex; align-items: baseline; gap: 8px; }
+.modal .bname { flex: 1; font-weight: 700; font-size: 15px; }
+.modal .bkcal { font-size: 12px; color: #9a7a94; font-variant-numeric: tabular-nums; }
+.modal .bcheck { color: var(--acc, #a63f97); display: flex; }
+.modal .brow.cur .bname { color: var(--acc, #a63f97); }
+.modal .bitems { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.modal .bitem { font-size: 11.5px; font-weight: 600; color: #7a4d74;
+  background: #f2ecf1; padding: 3px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.modal .brecipe { margin-top: 6px; font-size: 12px; color: #9a7a94; font-weight: 600; line-height: 1.4; }
+
+/* ---- card a griglia in BLOCKS (stile v1) ---- */
+.gcards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px 12px; }
+.gcard { background: rgba(255,255,255,.42); border-top: 1px solid rgba(255,255,255,.6);
+  border-radius: 18px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.gcard.off { opacity: .45; }
+.gcard .gctop { display: flex; align-items: center; justify-content: space-between; min-height: 34px; }
+.gcard .gcem { font-size: 26px; line-height: 1; }
+.gcard .gcname { font-family: 'Archivo'; font-weight: 800; font-size: 15px; letter-spacing: -.2px; margin-top: 2px; }
+.gcard .gcsub { font-size: 11px; color: var(--mut); font-weight: 600; line-height: 1.35; }
+/* i 4 chip stanno su una riga sola: niente "F 22" orfano a capo */
+.gchips { display: flex; flex-wrap: nowrap; gap: 3px; margin-top: 6px; }
+.chip { font-size: 10px; font-weight: 800; padding: 3px 5px; border-radius: 8px; white-space: nowrap;
+  background: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
+.chip.k { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.chip.k { color: var(--ink); }
+.chip.c { color: var(--acc); } .chip.p { color: #b06a1d; } .chip.f { color: #9a7d14; }

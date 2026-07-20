@@ -191,7 +191,26 @@
     return `${Math.round(grams)} g`;
   }
 
-  const SOLVER = { calcMacros, addMacros, diffMacros, status, solveDay, solveGap, resolveBlockItems, buildShoppingList, formatAmount };
+  // grammatura "tipica" di un blocco: quella che il solver assegnerebbe in una
+  // giornata standard. Serve alla UI per mostrare i grammi nelle card dei
+  // blocchi senza spostare i vincoli dall'alimento al blocco.
+  function typicalItems(block, ctx) {
+    if (!block || !block.slot) return [];
+    const dayType = (ctx && ctx.dayType) || "OFF";
+    const blocks = { ...(ctx.blocks || {}), [block.id]: block };
+    const selection = { colazione: "breakfast", pranzo: "lunch_A", merenda: "snack", cena: "dinner_A" };
+    selection[block.slot] = block.id;
+    const res = solveDay({ dayType, foods: ctx.foods, blocks, prefs: ctx.prefs, selection });
+    const solved = res.blocks.find((b) => b.slot === block.slot && b.blockId === block.id);
+    if (!solved) return [];
+    return solved.items.map((it) => ({
+      food: it.food,
+      grams: it.grams || 0,
+      label: (ctx.foods[it.food] || {}).label || it.food,
+    }));
+  }
+
+  const SOLVER = { calcMacros, addMacros, diffMacros, status, solveDay, solveGap, resolveBlockItems, buildShoppingList, formatAmount, typicalItems };
   if (typeof window !== "undefined") root.MB_SOLVER = SOLVER;
   if (typeof module !== "undefined") module.exports = SOLVER;
 })(typeof window !== "undefined" ? window : globalThis);
