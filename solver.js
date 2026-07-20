@@ -125,7 +125,13 @@
     const out = [];
 
     for (const slot of SLOTS) {
-      if (frozen[slot]) { out.push({ slot, blockId: frozen[slot].blockId || null, label: frozen[slot].label || slot, items: frozen[slot].items.map((i) => ({ ...i })), frozen: true }); continue; }
+      if (frozen[slot]) {
+        const fz = frozen[slot];
+        // pasto libero: macro dirette, nessun item da risolvere
+        if (fz.custom) { out.push({ slot, blockId: null, label: fz.custom.label || slot, items: [], custom: fz.custom, frozen: true }); continue; }
+        out.push({ slot, blockId: fz.blockId || null, label: fz.label || slot, items: fz.items.map((i) => ({ ...i })), frozen: true });
+        continue;
+      }
       const blockId = selection[slot];
       const block = blockId && blocks[blockId];
       if (!block) continue;
@@ -149,10 +155,12 @@
         }
       });
     }
+    // le macro dei pasti liberi pesano come fisse: i futuri si riadattano attorno
+    for (const b of out) if (b.custom) fixedTotal = addMacros(fixedTotal, b.custom.macros);
     if (opts.solve !== false && vars.length) solveRanges(vars, fixedTotal, target, W);
 
     let totals = { ...EMPTY };
-    for (const b of out) totals = addMacros(totals, calcMacros(b.items, foods));
+    for (const b of out) totals = addMacros(totals, b.custom ? b.custom.macros : calcMacros(b.items, foods));
     totals = { kcal: Math.round(totals.kcal), protein: round1(totals.protein), carbs: round1(totals.carbs), fat: round1(totals.fat) };
     const st = status(totals, target, tol);
     let suggestions = null;

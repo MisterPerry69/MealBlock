@@ -63,6 +63,32 @@
     );
   }
 
+  // ---- card proposta pre-spesa (vista Settimana) ----
+  function proposalCard(state) {
+    const p = state.proposal;
+    if (!p) return null;
+    const { foods } = state;
+    const newIds = new Set(p.newFoods.map((f) => f.id));
+    const labelOf = (id) => (foods[id] && foods[id].label) || (p.newFoods.find((f) => f.id === id) || {}).label || id;
+    return h("div", { class: "propcard glass-strong" },
+      h("div", { class: "prophead" },
+        icon("sparkles", 16, 2.2),
+        h("h3", {}, p.block.label),
+        h("span", { class: "propslot" }, SLOT_NAME[p.block.slot] || p.block.slot),
+      ),
+      h("div", { class: "propfoods" },
+        p.block.items.map((it) => h("span", { class: "propfood" + (newIds.has(it.food) ? " new" : "") },
+          (newIds.has(it.food) ? "~ " : "") + labelOf(it.food))),
+      ),
+      p.recipe && h("div", { class: "proprecipe" }, p.recipe),
+      h("div", { class: "propactions" },
+        h("button", { class: "icobtn", "aria-label": "Rifiuta proposta", onClick: () => A().dismissProposal() }, icon("x", 18, 2.6)),
+        h("div", { class: "spacer" }),
+        h("button", { class: "go propgo", "aria-label": "Accetta: in settimana e in lista spesa", onClick: () => A().acceptProposal() }, icon("check", 18, 2.6)),
+      ),
+    );
+  }
+
   // ---- card pasto (nella timeline) ----
   // long-press helper: tenere premuto ~450ms scatena fn (tap normale escluso)
   function longPress(el, fn) {
@@ -93,10 +119,22 @@
           done ? icon("check", 22, 3) : emoji),
         h("h3", {}, SLOT_NAME[slot] || block.label),
         adjusted && h("span", { class: "adj", "aria-label": "Riadattato" }, icon("refresh-cw", 11, 2.6)),
+        open && state !== "done" && h("button", { class: "icobtn mini", "aria-label": "Ho mangiato altro",
+          onClick: (e) => { e.stopPropagation(); A().openFreeMeal(slot); } }, icon("utensils", 15, 2.4)),
         h("div", { class: "chev" }, icon("chevron-down", 18, 2.4)),
       ),
       h("div", { class: "foods" },
-        block.items.map((it) => {
+        block.custom
+          ? h("div", { class: "food custom" },
+              h("span", { class: "dot" }),
+              h("span", { class: "fn" }, "~ " + block.custom.label,
+                h("span", { class: "cpf" },
+                  h("b", { class: "k" }, block.custom.macros.kcal),
+                  h("b", { class: "c" }, "C " + Math.round(block.custom.macros.carbs)),
+                  h("b", { class: "p" }, "P " + Math.round(block.custom.macros.protein)),
+                  h("b", { class: "f" }, "F " + Math.round(block.custom.macros.fat)))),
+            )
+          : block.items.map((it) => {
           const f = foods[it.food] || {};
           const k = (it.grams || 0) / 100;
           const cpf = h("span", { class: "cpf" },
@@ -120,16 +158,17 @@
           );
         }),
         // in modifica: riga vuota col + per aggiungere un alimento
-        editing && h("div", { class: "food addrow", onClick: (e) => { e.stopPropagation(); A().openFoodPicker(slot); } },
+        !block.custom && editing && h("div", { class: "food addrow", onClick: (e) => { e.stopPropagation(); A().openFoodPicker(slot); } },
           h("span", { class: "fn", style: { opacity: .45 } }, ""),
           h("button", { class: "stpb add" }, icon("plus", 17, 2.6)),
         ),
+        block.recipe && !editing && h("div", { class: "recipe" }, block.recipe),
         (() => {
-          const tot = window.MB_SOLVER.calcMacros(block.items, foods);
+          const tot = block.custom ? block.custom.macros : window.MB_SOLVER.calcMacros(block.items, foods);
           return h("div", { class: "food total" },
             h("span", { class: "fn" }, "Totale"),
             h("span", { class: "cpf" },
-              h("b", { class: "k" }, tot.kcal),
+              h("b", { class: "k" }, Math.round(tot.kcal)),
               h("b", { class: "c" }, "C " + Math.round(tot.carbs)),
               h("b", { class: "p" }, "P " + Math.round(tot.protein)),
               h("b", { class: "f" }, "F " + Math.round(tot.fat))));
@@ -137,25 +176,27 @@
       ),
     );
     // long-press sulla card aperta (non fatta) = entra/esce dalla modifica
-    if (open && !done) longPress(card, () => A().toggleEditMeal(slot));
+    if (open && !done) longPress(card, () => block.custom ? A().openFreeMeal(slot) : A().toggleEditMeal(slot));
     return card;
   }
 
   // ---- timeline (righe rail+card) ----
-  function timeline(day, foods, openSlots, editingSlot) {
+  function timeline(day, foods, openSlots, editingSlot, blocks) {
     const adjSlots = new Set((day.adjustments || []).map((a) => a.slot));
     const rows = day.blocks.map((b, i) => {
       const st = b.state || "future";
       return h("div", { class: "row " + st },
         h("div", { class: "rail" }, h("div", { class: "node" })),
-        mealCard(b, st, foods, openSlots.has(b.slot), editingSlot === b.slot, adjSlots.has(b.slot)),
+        mealCard({ ...b, recipe: (b.blockId && blocks[b.blockId] && blocks[b.blockId].recipe) || null }, st, foods, openSlots.has(b.slot), editingSlot === b.slot, adjSlots.has(b.slot)),
       );
     });
     return h("div", { class: "meals" }, h("div", { class: "mcol" }, rows));
   }
 
   // ---- nav pillola ----
-  function nav(route) {
+  function nav(state) {
+    const route = state.route;
+    const dot = !!state.proposal; // proposta pending → pallino su CALENDARIO
     const items = [
       ["oggi", "target", "DIARIO"],
       ["settimana", "calendar-days", "CALENDARIO"],
@@ -164,7 +205,7 @@
     ];
     return h("nav", { class: "glass" },
       items.map(([r, ic, lab]) =>
-        h("button", { class: r === route ? "on" : "", onClick: () => A().go && A().go(r) },
+        h("button", { class: (r === route ? "on" : "") + (r === "settimana" && dot ? " dotted" : ""), onClick: () => A().go && A().go(r) },
           icon(ic, 21, r === route ? 2.4 : 2), h("span", {}, lab))),
     );
   }
@@ -311,9 +352,53 @@
         h("textarea", { class: "field", rows: 3, disabled: busy,
           placeholder: "Es. settimana senza latticini, stanco della pasta…",
           oninput: (e) => A().setSheetText(e.target.value) }, sh.text || ""),
-        h("button", { class: "go", disabled: busy,
+        h("button", { class: "go" + (busy ? " busy" : ""), disabled: busy, "aria-label": "Componi la settimana con AI",
           onClick: () => A().aiComposeWeek(sh.text || "") },
-          icon("sparkles", 18, 2.2), busy ? "Compongo…" : "Componi la settimana"),
+          icon("sparkles", 18, 2.2)),
+      ))];
+  }
+
+  // ---- modal CENTRALE: pasto libero ("ho mangiato altro") ----
+  function freeMealModal(state) {
+    const sh = state.sheet;
+    if (!sh || sh.type !== "freemeal") return null;
+    const close = () => A().closeSheet && A().closeSheet();
+    const busy = sh.busy;
+    const num = (label, key) => h("label", { class: "fld" },
+      h("span", {}, label),
+      h("input", { type: "number", inputMode: "numeric", min: "0", value: sh.vals[key],
+        oninput: (e) => A().setFreeMealVal(key, e.target.value) }));
+    return [h("div", { class: "scrim", onClick: busy ? () => {} : close },
+      h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
+        h("textarea", { class: "field", rows: 2, disabled: busy,
+          placeholder: "Cosa hai mangiato?", autofocus: true,
+          oninput: (e) => A().setSheetText(e.target.value) }, sh.text || ""),
+        sh.manual && h("div", { class: "erow four" }, num("kcal", "kcal"), num("C", "carbs"), num("P", "protein"), num("F", "fat")),
+        h("div", { class: "erow actions" },
+          sh.isCustom && h("button", { class: "icobtn", "aria-label": "Ripristina pasto pianificato",
+            onClick: () => A().restorePlannedMeal(sh.slot) }, icon("rotate-ccw", 18, 2.4)),
+          h("div", { class: "spacer" }),
+          h("button", { class: "go", disabled: busy, "aria-label": sh.manual ? "Conferma macro" : "Stima con AI",
+            onClick: () => (sh.manual ? A().confirmFreeMealManual() : A().submitFreeMeal()) },
+            sh.manual ? icon("check", 18, 2.6) : icon("sparkles", 18, 2.2)),
+        ),
+      ))];
+  }
+
+  // ---- modal CENTRALE: impostazioni proposta ----
+  function settingsModal(state) {
+    const sh = state.sheet;
+    if (!sh || sh.type !== "settings") return null;
+    const close = () => A().closeSheet && A().closeSheet();
+    const DAYS = [["4", "Gio"], ["5", "Ven"], ["6", "Sab"], ["0", "Dom"]];
+    return [h("div", { class: "scrim", onClick: close },
+      h("div", { class: "modal emodal", onClick: (e) => e.stopPropagation() },
+        h("label", { class: "fld" }, h("span", {}, "Supermercato"),
+          h("input", { value: sh.supermarket, oninput: (e) => A().setSettingsVal({ supermarket: e.target.value }) })),
+        h("label", { class: "fld" }, h("span", {}, "Proposta dal"),
+          h("div", { class: "seg four" }, DAYS.map(([v, lab]) =>
+            h("button", { class: String(sh.weekday) === v ? "on" : "", onClick: () => A().setSettingsVal({ weekday: Number(v) }) }, lab)))),
+        h("button", { class: "go", "aria-label": "Salva impostazioni", onClick: () => A().saveSettings() }, icon("check", 18, 2.6)),
       ))];
   }
 
@@ -325,6 +410,8 @@
     const fe = foodEditModal(state); if (fe) phone.append(...fe);
     const be = blockEditModal(state); if (be) phone.append(...be);
     const ai = aiModal(state); if (ai) phone.append(...ai);
+    const fm = freeMealModal(state); if (fm) phone.append(...fm);
+    const st2 = settingsModal(state); if (st2) phone.append(...st2);
     if (state.toast) phone.append(h("div", { class: "toast" }, state.toast));
   }
 
@@ -356,10 +443,10 @@
       inner.append(calbox(today.eaten || { kcal: 0, protein: 0, carbs: 0, fat: 0 }, today.target));
       const ab = adjustBar(today, foods);
       if (ab) inner.append(ab);
-      inner.append(timeline(today, foods, state.openSlots || new Set(), state.editingSlot));
+      inner.append(timeline(today, foods, state.openSlots || new Set(), state.editingSlot, state.blocks));
     }
 
-    phone.append(scroll, nav(state.route));
+    phone.append(scroll, nav(state));
     overlays(state, phone);
     return phone;
   }
@@ -381,6 +468,9 @@
       h("button", { class: "icobtn", title: "Componi con AI", onClick: () => A().openAiWeek && A().openAiWeek() }, icon("sparkles", 19, 2.2)),
       h("button", { class: "icobtn", title: "Rigenera", onClick: () => A().regenerateWeek && A().regenerateWeek() }, icon("refresh-cw", 19, 2.2)),
     ));
+
+    const pc = proposalCard(state);
+    if (pc) inner.append(pc);
 
     if (!week) inner.append(h("div", { class: "boot", style: { color: "var(--ink)", opacity: .6 } }, "Nessuna settimana."));
     else {
@@ -422,7 +512,7 @@
       ));
     }
 
-    phone.append(scroll, nav(state.route));
+    phone.append(scroll, nav(state));
     overlays(state, phone);
     return phone;
   }
@@ -433,14 +523,19 @@
     const phone = h("div", { class: "phone theme-magenta" });
     const scroll = h("div", { class: "screen" }, h("div", { class: "scroll" }));
     const inner = scroll.firstChild;
-    inner.append(h("div", { class: "head" }, h("h1", {}, "SPESA"), h("div", { class: "spacer" }), syncBadge(state)));
 
     // ricostruisco i giorni risolti col solver, poi aggrego
     const SOLVER = window.MB_SOLVER;
-    const days = week ? week.days.map((d) =>
+    const shopWeek = state.nextWeek || week;
+    const showingNext = shopWeek !== week;
+    const days = shopWeek ? shopWeek.days.map((d) =>
       SOLVER.solveDay({ dayType: d.dayType, foods, blocks, prefs, selection: d.selection })) : [];
     const byCat = SOLVER.buildShoppingList(days, foods);
     const CAT_LABEL = { carb: "Carboidrati", protein: "Proteine", fat: "Grassi", fruit: "Frutta", extra: "Extra" };
+
+    inner.append(h("div", { class: "head" }, h("h1", {}, "SPESA"),
+      showingNext && h("span", { class: "on" }, "PROSSIMA"),
+      h("div", { class: "spacer" }), syncBadge(state)));
 
     if (!Object.keys(byCat).length) inner.append(h("div", { class: "boot", style: { color: "var(--ink)", opacity: .6 } }, "Genera prima la settimana."));
     else inner.append(h("div", { class: "shop" },
@@ -455,7 +550,7 @@
         )),
     ));
 
-    phone.append(scroll, nav(state.route));
+    phone.append(scroll, nav(state));
     overlays(state, phone);
     return phone;
   }
@@ -472,6 +567,7 @@
       h("h1", {}, tab.toUpperCase()),
       h("div", { class: "spacer" }),
       syncBadge(state),
+      h("button", { class: "icobtn", "aria-label": "Impostazioni", onClick: () => A().openSettings && A().openSettings() }, icon("settings", 19, 2.2)),
       h("button", { class: "icobtn", title: "Nuovo", onClick: () => A().newEntity && A().newEntity(tab) }, icon("plus", 20, 2.4)),
     ));
 
@@ -486,10 +582,12 @@
         list.map((f) => h("div", { class: "gitem glass", onClick: () => A().editFood(f.id) },
           h("span", { class: "gem" }, f.emoji || "🍽️"),
           h("div", { class: "gmain" },
-            h("span", { class: "gname2" }, f.label),
+            h("span", { class: "gname2" }, (f.verified === false ? "~ " : "") + f.label),
             h("span", { class: "gsub" },
               f.kcal + " kcal · C" + f.carbs + " P" + f.protein + " F" + f.fat,
             )),
+          f.verified === false && h("button", { class: "icobtn mini", "aria-label": "Conferma macro dall'etichetta",
+            onClick: (e) => { e.stopPropagation(); A().confirmFood(f.id); } }, icon("check", 15, 2.6)),
           h("span", { class: "gkind" }, f.kind === "fisso" ? (f.fixed + " g") : (f.rangeMin + "–" + f.rangeMax)),
         ))));
     } else {
@@ -508,7 +606,7 @@
         ].flat())));
     }
 
-    phone.append(scroll, nav(state.route));
+    phone.append(scroll, nav(state));
     overlays(state, phone);
     return phone;
   }
@@ -521,7 +619,7 @@
         h("div", { class: "screen" }, h("div", { class: "scroll" },
           h("div", { class: "head" }, h("h1", {}, label)),
           h("div", { style: { padding: "40px 24px", color: "var(--mut)", fontWeight: 600 } }, "In arrivo."))),
-        nav(state.route));
+        nav(state));
       return phone;
     };
   }

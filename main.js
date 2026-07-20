@@ -26,11 +26,11 @@
     const todayIso = window.MB_WEEK.iso(new Date());
     const wday = state.week && (state.week.days || []).find((d) => d.date === todayIso);
     const dayType = (opts && opts.dayType) || (prev && prev.dayType) || (wday && wday.dayType) || defaultDayType(prefs);
-    const selection = (prev && prev.selection) || (wday && wday.selection) || defaultSelection(dayType);
+    const selection = (opts && opts.selection) || (prev && prev.selection) || (wday && wday.selection) || defaultSelection(dayType);
 
     // pasti spuntati O modificati a mano -> frozen (il solver non li tocca, ridistribuisce sui futuri)
     const frozen = {};
-    if (prev) for (const b of prev.blocks) if (b.state === "done" || b.edited) frozen[b.slot] = { blockId: b.blockId, label: b.label, items: b.items, edited: b.edited, wasDone: b.state === "done" };
+    if (prev) for (const b of prev.blocks) if (b.state === "done" || b.edited || b.custom) frozen[b.slot] = { blockId: b.blockId, label: b.label, items: b.items, custom: b.custom, edited: b.edited, wasDone: b.state === "done" };
 
     const res = SOLVER.solveDay({ dayType, foods, blocks, prefs, selection, frozen });
 
@@ -55,7 +55,7 @@
 
     // MANGIATO = somma dei soli pasti spuntati (le barre si riempiono spuntando)
     let eaten = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
-    for (const b of withState) if (b.state === "done") eaten = SOLVER.addMacros(eaten, SOLVER.calcMacros(b.items, foods));
+    for (const b of withState) if (b.state === "done") eaten = SOLVER.addMacros(eaten, b.custom ? b.custom.macros : SOLVER.calcMacros(b.items, foods));
     eaten = { kcal: Math.round(eaten.kcal), protein: Math.round(eaten.protein * 10) / 10, carbs: Math.round(eaten.carbs * 10) / 10, fat: Math.round(eaten.fat * 10) / 10 };
 
     // diff dei riadattamenti vs stato precedente (solo slot non-frozen)
@@ -140,7 +140,24 @@
       const s = store.get();
       if (!s.today) return;
       const dayType = s.today.dayType === "ON" ? "OFF" : "ON";
-      store.set({ today: composeToday(s, { dayType }) });
+      // riverifica col nuovo tipo: se un blocco non regge più viene sostituito
+      // (mai i pasti fatti/modificati/liberi); la barra riadattamenti lo mostra
+      const frozen = {};
+      for (const b of s.today.blocks) if (b.state === "done" || b.edited || b.custom) frozen[b.slot] = b.custom ? { custom: b.custom } : { blockId: b.blockId, label: b.label, items: b.items };
+      const todayIso = window.MB_WEEK.iso(new Date());
+      const day = window.MB_WEEK.ensureSolvable(
+        { date: todayIso, dayType, selection: { ...s.today.selection } },
+        { foods: s.foods, blocks: s.blocks, prefs: s.prefs, frozen });
+      const today = composeToday(s, { dayType, selection: day.selection });
+      store.set({ today });
+      persistDay(today);
+      // riflette il cambio anche nella settimana e salva
+      if (s.week) {
+        const days = s.week.days.map((d) => d.date === todayIso ? { ...d, dayType, selection: day.selection } : d);
+        const week = { ...s.week, days };
+        store.set({ week });
+        api.saveWeek(week);
+      }
     },
 
     regenerate() {
@@ -186,6 +203,7 @@
       if (!d.id) d.id = d.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
       if (sh.type === "foodedit") {
         ["kcal", "carbs", "protein", "fat", "rangeMin", "rangeMax", "fixed"].forEach((k) => { if (d[k] != null) d[k] = Number(d[k]) || 0; });
+        d.verified = true; // salvare dal form = valori controllati dall'utente
         store.set({ foods: { ...s.foods, [d.id]: d }, sheet: null });
         api.saveFood(d);
       } else {
@@ -261,12 +279,26 @@
     toggleWeekDayType(date) {
       const s = store.get();
       if (!s.week) return;
-      const days = s.week.days.map((d) => d.date === date ? { ...d, dayType: d.dayType === "ON" ? "OFF" : "ON" } : d);
+      const todayIso = window.MB_WEEK.iso(new Date());
+      const days = s.week.days.map((d) => {
+        if (d.date !== date) return d;
+        const dayType = d.dayType === "ON" ? "OFF" : "ON";
+        // per oggi rispetta i pasti fatti/modificati/liberi
+        const frozen = {};
+        if (d.date === todayIso && s.today) {
+          for (const b of s.today.blocks) if (b.state === "done" || b.edited || b.custom) frozen[b.slot] = b.custom ? { custom: b.custom } : { blockId: b.blockId, label: b.label, items: b.items };
+        }
+        const fixed = window.MB_WEEK.ensureSolvable({ ...d, dayType, selection: { ...d.selection } },
+          { foods: s.foods, blocks: s.blocks, prefs: s.prefs, frozen });
+        return { ...d, dayType, selection: fixed.selection };
+      });
       const week = { ...s.week, days };
       store.set({ week });
-      // se è oggi, ricomponi la giornata
-      const todayIso = window.MB_WEEK.iso(new Date());
-      if (date === todayIso) store.set((st) => ({ today: composeToday({ ...st, today: null }) }));
+      if (date === todayIso) {
+        const wday = days.find((d) => d.date === todayIso);
+        store.set((st) => ({ today: composeToday(st, { dayType: wday.dayType, selection: wday.selection }) }));
+        persistDay(store.get().today);
+      }
       api.saveWeek(week);
     },
 
@@ -307,6 +339,109 @@
       editMeal(sh.slot, (items) => items.map((i) => i.food === sh.food ? { ...i, grams: g } : i));
     },
 
+    // ---- pasto libero: "ho mangiato altro" ----
+    openFreeMeal(slot) {
+      const s = store.get();
+      const b = s.today && s.today.blocks.find((x) => x.slot === slot);
+      store.set({ sheet: { type: "freemeal", slot, text: (b && b.custom && b.custom.label) || "", manual: false, busy: false,
+        vals: { kcal: "", protein: "", carbs: "", fat: "" }, isCustom: !!(b && b.custom) } });
+    },
+    setFreeMealVal(key, value) { store.set((s) => ({ sheet: { ...s.sheet, vals: { ...s.sheet.vals, [key]: value } } })); },
+    async submitFreeMeal() {
+      const s = store.get();
+      const sh = s.sheet;
+      if (!sh || sh.type !== "freemeal" || !(sh.text || "").trim()) return;
+      store.set({ sheet: { ...sh, busy: true } });
+      try {
+        const est = await api.aiEstimateMeal(sh.text.trim());
+        applyFreeMeal(sh.slot, { label: est.label, macros: est.macros, estimated: true });
+        store.set({ sheet: null });
+      } catch (e) {
+        // AI non disponibile → inserimento manuale, il testo resta come etichetta
+        store.set((st) => ({ sheet: st.sheet && { ...st.sheet, busy: false, manual: true } }));
+      }
+    },
+    confirmFreeMealManual() {
+      const s = store.get();
+      const sh = s.sheet;
+      if (!sh || sh.type !== "freemeal") return;
+      const n = (x) => Math.max(0, Math.round(Number(x) || 0));
+      const macros = { kcal: n(sh.vals.kcal), protein: n(sh.vals.protein), carbs: n(sh.vals.carbs), fat: n(sh.vals.fat) };
+      if (!macros.kcal && !macros.protein && !macros.carbs && !macros.fat) return; // tutto vuoto: niente da registrare
+      applyFreeMeal(sh.slot, { label: ((sh.text || "").trim() || "Pasto libero").slice(0, 40), macros, estimated: false });
+      store.set({ sheet: null });
+    },
+    // torna al pasto pianificato (annulla il pasto libero)
+    restorePlannedMeal(slot) {
+      const s = store.get();
+      if (!s.today) return;
+      const blocks = s.today.blocks.map((b) => b.slot === slot ? { ...b, custom: null, edited: false, state: b.state === "done" ? "future" : b.state } : b);
+      const today = composeToday({ ...s, today: { ...s.today, blocks } });
+      store.set({ today, sheet: null });
+      persistDay(today);
+    },
+
+    // ---- proposta settimanale ----
+    async acceptProposal() {
+      const s = store.get();
+      const p = s.proposal;
+      if (!p || p.status !== "pending") return;
+      store.set({ proposal: { ...p, status: "accepting" } }); // blocca il doppio tap
+      // 1) nuovi alimenti nel catalogo (da verificare sull'etichetta)
+      const foods = { ...s.foods };
+      for (const f of p.newFoods) { const nf = { kind: "sfuso", ...f, verified: false }; foods[nf.id] = nf; api.saveFood(nf); }
+      // 2) blocco nel catalogo, con ricetta
+      const block = { ...p.block, recipe: p.recipe, enabled: true };
+      const blocks = { ...s.blocks, [block.id]: block };
+      api.saveBlock(block);
+      store.set({ foods, blocks });
+      // 3) settimana prossima: carica o genera, piazza il blocco, salva
+      let next = null;
+      try { next = await api.getWeek(p.weekId); } catch (e) { next = null; }
+      const monday = window.MB_WEEK.mondayOf(new Date()); monday.setDate(monday.getDate() + 7);
+      if (!next) next = window.MB_WEEK.generateWeek({ foods, blocks, prefs: s.prefs, anchor: monday });
+      next = window.MB_PROPOSAL.placeInWeek(next, block, { foods, blocks, prefs: s.prefs });
+      api.saveWeek(next);
+      // 4) stato proposta
+      const done = { ...p, status: "accepted" };
+      store.set((st) => ({ nextWeek: next, proposal: null, prefs: { ...st.prefs, "proposal.current": done } }));
+      api.savePrefs({ "proposal.current": done });
+    },
+    dismissProposal() {
+      const s = store.get();
+      const p = s.proposal;
+      if (!p) return;
+      const done = { ...p, status: "dismissed" };
+      store.set((st) => ({ proposal: null, prefs: { ...st.prefs, "proposal.current": done } }));
+      api.savePrefs({ "proposal.current": done });
+    },
+    // ---- impostazioni (supermercato + giorno proposta) ----
+    openSettings() {
+      const s = store.get();
+      const pp = proposalPrefs(s.prefs);
+      store.set({ sheet: { type: "settings", supermarket: pp.supermarket, weekday: pp.weekday } });
+    },
+    setSettingsVal(patch) { store.set((st) => ({ sheet: { ...st.sheet, ...patch } })); },
+    saveSettings() {
+      const s = store.get();
+      const sh = s.sheet;
+      if (!sh || sh.type !== "settings") return;
+      // NB: 0 (domenica) è falsy — niente `|| 5`, whitelist esplicita
+      const wd = Number(sh.weekday);
+      const patch = { "proposal.supermarket": String(sh.supermarket || "Lidl").slice(0, 40), "proposal.weekday": [0, 4, 5, 6].includes(wd) ? wd : 5 };
+      store.set((st) => ({ prefs: { ...st.prefs, ...patch }, sheet: null }));
+      api.savePrefs(patch);
+    },
+    // ---- conferma macro di un alimento proposto dall'AI ----
+    confirmFood(id) {
+      const s = store.get();
+      const f = s.foods[id];
+      if (!f) return;
+      const nf = { ...f, verified: true };
+      store.set({ foods: { ...s.foods, [id]: nf } });
+      api.saveFood(nf);
+    },
+
   };
 
   // applica una modifica manuale al pasto: il pasto diventa "fissato" (frozen)
@@ -334,6 +469,18 @@
     persistDay(today);
   }
 
+  // registra un pasto libero: lo slot diventa custom (sempre frozen),
+  // i pasti futuri si riadattano e la barra riadattamenti lo mostra.
+  function applyFreeMeal(slot, custom) {
+    const s = store.get();
+    if (!s.today) return;
+    const blocks = s.today.blocks.map((b) => b.slot === slot ? { ...b, custom, items: [], blockId: null } : b);
+    const today = composeToday({ ...s, today: { ...s.today, blocks } });
+    store.set({ today });
+    persistDay(today);
+    api.logEvent("freeMeal", { slot, label: custom.label, estimated: custom.estimated }).catch(() => {});
+  }
+
   // helper: ricompone da uno stato dato (per checkMeal che passa blocks modificati)
   function composeTodayFrom(state) { return composeToday(state); }
 
@@ -352,13 +499,61 @@
     api.savePrefs(patch);
   }
 
+  // ---- proposta settimanale pre-spesa ----
+  function proposalPrefs(prefs) {
+    return {
+      weekday: Number(prefs["proposal.weekday"] ?? 5),        // 5 = venerdì
+      supermarket: String(prefs["proposal.supermarket"] ?? "Lidl"),
+    };
+  }
+  function nextWeekId() {
+    const m = window.MB_WEEK.mondayOf(new Date());
+    m.setDate(m.getDate() + 7);
+    return window.MB_WEEK.isoWeekId(m);
+  }
+  function inProposalWindow(prefs) {
+    const dow = new Date().getDay();
+    const wd = proposalPrefs(prefs).weekday;
+    // wd=0 (domenica) = solo domenica; altrimenti da wd fino a domenica inclusa
+    return wd === 0 ? dow === 0 : (dow === 0 || dow >= wd);
+  }
+  // al boot: nella finestra ven→dom, se non c'è già una proposta per la
+  // settimana prossima, chiedila all'AI in background (silenzio sugli errori)
+  async function maybeFetchProposal() {
+    const s = store.get();
+    if (!inProposalWindow(s.prefs)) return;
+    const wid = nextWeekId();
+    const cur = s.prefs["proposal.current"];
+    if (cur && cur.weekId === wid) {
+      if (cur.status === "pending") store.set({ proposal: cur });
+      return; // già proposta (in qualsiasi stato) per la settimana prossima
+    }
+    try {
+      let raw = null, valid = null;
+      for (let attempt = 0; attempt < 2 && !valid; attempt++) {
+        raw = await api.aiProposeWeeklyBlock({
+          foods: s.foods, blocks: s.blocks,
+          learnerScores: s.prefs["learner.blockScores"] || {},
+          supermarket: proposalPrefs(s.prefs).supermarket,
+        });
+        valid = window.MB_PROPOSAL.validateProposal(raw, s.foods, s.blocks, s.prefs);
+      }
+      if (!valid) return; // due tentativi falliti: nessuna proposta, nessun errore in faccia
+      valid.block.id = window.MB_PROPOSAL.uniqueBlockId(valid.block.id, s.blocks);
+      const proposal = { weekId: wid, block: valid.block, newFoods: valid.newFoods, recipe: valid.recipe, status: "pending" };
+      store.set({ proposal });
+      api.savePrefs({ "proposal.current": proposal });
+      store.set((st) => ({ prefs: { ...st.prefs, "proposal.current": proposal } }));
+    } catch (e) { /* AI assente: silenzio, si riproverà al prossimo boot */ }
+  }
+
   function serializeDay(today) {
     return {
       id: window.MB_WEEK.iso(new Date()),
       date: window.MB_WEEK.iso(new Date()),
       dayType: today.dayType,
       selection: today.selection,
-      resolved: today.blocks.map((b) => ({ slot: b.slot, blockId: b.blockId, items: b.items, state: b.state })),
+      resolved: today.blocks.map((b) => ({ slot: b.slot, blockId: b.blockId, items: b.items, custom: b.custom || null, state: b.state })),
       totals: today.totals,
     };
   }
@@ -406,6 +601,12 @@
         const today = composeToday(s);
         return { today, openSlots: new Set(today.activeSlot ? [today.activeSlot] : []) };
       });
+      // proposta pre-spesa (ven→dom) + settimana prossima già salvata
+      maybeFetchProposal();
+      if (inProposalWindow(store.get().prefs)) {
+        // non sovrascrivere una nextWeek già impostata (es. accettazione più rapida del fetch)
+        api.getWeek(nextWeekId()).then((w) => { if (w) store.set((st) => st.nextWeek ? {} : { nextWeek: w }); }).catch(() => {});
+      }
       // persisti la settimana se generata ora (mock: no-op)
       if (!data.currentWeek) api.saveWeek(store.get().week);
     } catch (e) {

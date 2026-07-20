@@ -48,12 +48,15 @@
   // prova a sostituire pranzo/cena con le alternative (deterministico).
   function ensureSolvable(day, ctx) {
     const { foods, blocks, prefs } = ctx;
+    const frozen = ctx.frozen || {};
     const SOLVER = (typeof window !== "undefined" && window.MB_SOLVER) || (typeof require !== "undefined" ? require("./solver.js") : null);
     if (!SOLVER || !foods) return day; // senza solver/foods non posso verificare
-    const ok = (sel) => SOLVER.solveDay({ dayType: day.dayType, foods, blocks, prefs, selection: sel }).status.inTarget;
+    const ok = (sel) => SOLVER.solveDay({ dayType: day.dayType, foods, blocks, prefs, selection: sel, frozen }).status.inTarget;
     if (ok(day.selection)) return day;
     // ritenta sostituendo prima la cena, poi il pranzo, con ogni alternativa
+    // (mai gli slot frozen: sono pasti fatti/modificati/liberi dell'utente)
     for (const slot of ["cena", "pranzo"]) {
+      if (frozen[slot]) continue;
       const alts = Object.values(blocks).filter((b) => b.slot === slot && b.enabled !== false && b.id !== day.selection[slot]);
       for (const alt of alts) {
         const sel = { ...day.selection, [slot]: alt.id };
@@ -128,7 +131,7 @@
     return pool[0];
   }
 
-  const WEEK = { generateWeek, mondayOf, isoWeekId, iso };
+  const WEEK = { generateWeek, ensureSolvable, mondayOf, isoWeekId, iso };
   if (typeof window !== "undefined") window.MB_WEEK = WEEK;
   if (typeof module !== "undefined") module.exports = WEEK;
 })();

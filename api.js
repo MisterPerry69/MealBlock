@@ -91,6 +91,23 @@
       if (CFG.useMock) { await mockDelay(); return null; }
       return gasPost("aiCompose", { scope, notes, context });
     },
+    // stima macro di un pasto libero (testo) — RPC diretta, non in coda
+    async aiEstimateMeal(text) {
+      if (CFG.useMock) { await mockDelay(); return { label: String(text).slice(0, 40), macros: { kcal: 650, protein: 30, carbs: 70, fat: 25 } }; }
+      return gasPost("aiEstimateMeal", { text });
+    },
+    // proposta settimanale pre-spesa — RPC diretta, non in coda
+    async aiProposeWeeklyBlock(ctx) {
+      if (CFG.useMock) {
+        await mockDelay();
+        return {
+          block: { id: "salmone_pure", label: "Salmone + Purè", slot: "cena", items: [{ food: "salmone_lidl" }, { food: "pure" }, { food: "olio_oliva" }] },
+          newFoods: [{ id: "salmone_lidl", label: "Salmone Deluxe Lidl", kcal: 208, carbs: 0, protein: 20, fat: 13, cat: "protein", kind: "fisso", fixed: 150, emoji: "🐟" }],
+          recipe: "Scongela il salmone e cuocilo 4 minuti per lato in padella. Prepara il purè e condisci con l'olio.",
+        };
+      }
+      return gasPost("aiProposeWeeklyBlock", ctx);
+    },
   };
 
   window.MB_API = api;
