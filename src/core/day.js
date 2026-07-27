@@ -43,19 +43,28 @@ export function isSgarroDay(log) {
 }
 
 /**
- * Marca (o smarca) un log come giornata SGARRO. Attivando, ricorda il tipo
- * originale in `tipoBase` per poterci tornare. Le righe restano intatte.
- * Non muta il log passato.
+ * Marca (o smarca) un log come giornata SGARRO.
+ * Attivando: "blank canvas" — stessi pasti (contenitori) ma SVUOTATI, cosi
+ * l'utente aggiunge solo cio che ha davvero mangiato. I pasti originali sono
+ * salvati in `mealsBase` per poterli ripristinare smarcando. Ricorda anche il
+ * tipo originale in `tipoBase`. Non muta il log passato.
  */
 export function markSgarroDay(log, attiva) {
   if (attiva) {
     if (isSgarroDay(log)) return { ...log };
-    return { ...log, tipo: 'SGARRO', tipoBase: log.tipo };
+    return {
+      ...log,
+      tipo: 'SGARRO',
+      tipoBase: log.tipo,
+      mealsBase: log.meals, // conserva i pasti originali
+      meals: log.meals.map((m) => ({ id: m.id, nome: m.nome, righe: [] })), // vuoti
+    };
   }
-  // smarca: torna al tipo base ricordato (default ON)
+  // smarca: ripristina pasti e tipo originali
   const base = log.tipoBase || 'ON';
-  const { tipoBase, ...rest } = log;
-  return { ...rest, tipo: base };
+  const meals = log.mealsBase || log.meals;
+  const { tipoBase, mealsBase, ...rest } = log;
+  return { ...rest, tipo: base, meals };
 }
 
 /**

@@ -7,8 +7,8 @@ import { eatenMacros, mealMacros, flatFoods, round } from '../format.js';
 import { weekdayKey, isSgarroDay } from '../../core/day.js';
 import { macrosOfRows } from '../../core/solver.js';
 
-const DOW = { lun:'lun', mar:'mar', mer:'mer', gio:'gio', ven:'ven', sab:'sab', dom:'dom' };
-const MON = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+const DOW = { lun:'Lunedì', mar:'Martedì', mer:'Mercoledì', gio:'Giovedì', ven:'Venerdì', sab:'Sabato', dom:'Domenica' };
+const MON = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 function fmtDate(iso){ const [,m,d]=iso.split('-').map(Number); return `${DOW[weekdayKey(iso)]} ${d} ${MON[m-1]}`; }
 
 const MEAL_IC = { colazione:'colazione', pranzo:'pranzo', cena:'cena', spuntino:'spuntino' };
@@ -18,43 +18,31 @@ export function renderOggi(root, ctx) {
   const { log, foods, template } = ctx.today;
   const sgarro = isSgarroDay(log);
   const on = (sgarro ? (log.tipoBase || 'ON') : log.tipo) === 'ON';
-
-  // header con day toggle: tap = ON/OFF, hold = SGARRO
-  root.append(el('div', { class: 'hdr' }, [
-    el('div', {}, [
-      el('div', { class: 'hdr__eyebrow', text: 'Ciao' }),
-      el('div', { class: 'hdr__title', text: fmtDate(log.data) }),
-    ]),
-    dayToggle(sgarro, on, ctx),
-  ]));
-
-  // selettore variante (se la categoria ha piu di un piano)
   const cat = sgarro ? (log.tipoBase || 'ON') : log.tipo;
   const varianti = ctx.variantsOf(cat);
-  if (!sgarro && varianti.length > 1) root.append(variantPicker(varianti, log.variantId, ctx));
 
-  // strumenti: ricalcola + modifica
-  root.append(el('div', { class: 'oggi-tools' }, [
-    el('button', { class: 'tool', onClick: () => ctx.recalcNow() }, [
-      el('span', { html: icon.refresh(16) }), 'Ricalcola',
-    ]),
-    el('button', { class: `tool ${ctx.editMode ? 'tool--attention' : ''}`, onClick: () => ctx.toggleEditMode() }, [
-      el('span', { html: icon.pencil(16) }), ctx.editMode ? 'Fine' : 'Modifica',
+  // header: data completa a sinistra; a destra 🔄 ✏️ | ON/OFF ▼
+  root.append(el('div', { class: 'ohdr' }, [
+    el('div', { class: 'ohdr__date', text: fmtDate(log.data) }),
+    el('div', { class: 'ohdr__ctrl' }, [
+      el('button', { class: 'ico-tool', 'aria-label': 'Ricalcola', html: icon.refresh(18), onClick: () => ctx.recalcNow() }),
+      el('button', { class: `ico-tool ${ctx.editMode ? 'is-active' : ''}`, 'aria-label': ctx.editMode ? 'Fine modifica' : 'Modifica', html: icon.pencil(18), onClick: () => ctx.toggleEditMode() }),
+      dayControl(sgarro, on, varianti, log, ctx),
     ]),
   ]));
 
-  for (const meal of log.meals) root.append(mealCard(meal, foods, ctx));
+  for (const meal of log.meals) root.append(mealCard(meal, foods, ctx, sgarro));
 
-  root.append(el('button', { class: 'addf', onClick: () => ctx.addSgarro() }, [
+  // "Fuori piano" ha senso solo quando NON sei gia in giornata sgarro
+  if (!sgarro) root.append(el('button', { class: 'addf', onClick: () => ctx.addSgarro() }, [
     el('span', { html: icon.plus(16) }), 'Fuori piano',
   ]));
 
-  // tracker: se SGARRO non c'e target rigido -> mostra consumo senza "sforare"
   const target = sgarro ? sgarroTarget(log, foods) : template.target;
   renderTracker(eatenMacros(log, foods), target);
 }
 
-// giornata SGARRO: il "target" e il totale stesso della giornata (barre piene, no colpa)
+// giornata SGARRO: il "target" e il totale stesso (barre piene, no colpa)
 function sgarroTarget(log, foods) {
   const flat = flatFoods(foods);
   const rows = [];
@@ -63,47 +51,58 @@ function sgarroTarget(log, foods) {
   return { kcal: t.kcal || 1, carbo: t.carbo || 1, prot: t.prot || 1, fat: t.fat || 1 };
 }
 
-function dayToggle(sgarro, on, ctx) {
+// pill ON/OFF/SGARRO + chevron che apre il menu (varianti + azioni giorno)
+function dayControl(sgarro, on, varianti, log, ctx) {
   const cls = sgarro ? 'daybtn--sgarro' : (on ? '' : 'daybtn--off');
   const label = sgarro ? 'SGARRO' : (on ? 'ON' : 'OFF');
   const ic = sgarro ? 'offplan' : (on ? 'on' : 'off');
 
   const btn = el('button', {
     class: `daybtn ${cls}`,
-    'aria-label': `Giornata ${label}. Tocca per ON/OFF, tieni premuto per sgarro.`,
-    html: icon[ic](17) + `<span>${label}</span>`,
+    'aria-label': `Giornata ${label}. Apri opzioni giorno.`,
+    html: icon[ic](16) + `<span>${label}</span>` + icon.chevronDown(15),
+    onClick: () => openDayMenu(btn, sgarro, on, varianti, log, ctx),
   });
-
-  // tap = toggle ON/OFF ; hold (500ms) = toggle SGARRO
-  let held = false, timer = null;
-  const start = () => { held = false; timer = setTimeout(() => { held = true; ctx.toggleSgarroDay(); }, 500); };
-  const end = (e) => { clearTimeout(timer); if (!held) { e.preventDefault(); ctx.toggleDayType(); } };
-  btn.addEventListener('pointerdown', start);
-  btn.addEventListener('pointerup', end);
-  btn.addEventListener('pointerleave', () => clearTimeout(timer));
   return btn;
 }
 
-function variantPicker(varianti, currentId, ctx) {
-  const wrap = el('div', { class: 'vpick' });
-  for (const v of varianti) {
-    wrap.append(el('button', {
-      class: `vpick__b ${v.id === currentId ? 'is-active' : ''}`,
-      text: v.nome,
-      onClick: () => ctx.applyVariant(v.id),
-    }));
+function openDayMenu(anchor, sgarro, on, varianti, log, ctx) {
+  const items = [];
+
+  // switch categoria ON/OFF
+  items.push({ label: on ? 'Passa a OFF' : 'Passa a ON', icon: on ? 'off' : 'on', act: () => ctx.toggleDayType() });
+
+  // varianti della categoria corrente
+  if (!sgarro && varianti.length > 0) {
+    for (const v of varianti) {
+      items.push({ label: v.nome, icon: 'check', muted: v.id !== log.variantId, act: () => ctx.applyVariant(v.id) });
+    }
   }
-  return wrap;
+
+  // sgarro on/off
+  items.push({ label: sgarro ? 'Annulla sgarro' : 'Segna come sgarro', icon: 'offplan', danger: !sgarro, act: () => ctx.toggleSgarroDay() });
+
+  const menu = el('div', { class: 'daymenu' }, items.map((it) => el('button', {
+    class: `daymenu__i ${it.muted ? 'is-muted' : ''} ${it.danger ? 'is-danger' : ''}`,
+    html: icon[it.icon](16) + `<span>${it.label}</span>`,
+    onClick: () => { close(); it.act(); },
+  })));
+
+  const back = el('div', { class: 'daymenu-backdrop', onClick: (e) => { if (e.target === back) close(); } }, [menu]);
+  function close() { back.remove(); }
+  document.body.append(back);
 }
 
-function mealCard(meal, foods, ctx) {
+function mealCard(meal, foods, ctx, sgarro) {
   const locked = meal.righe.length > 0 && meal.righe.every((r) => r.stato === 'bloccata');
   const m = mealMacros(meal, foods);
+  const editable = ctx.editMode || sgarro; // in SGARRO si aggiunge sempre
 
   const head = el('div', { class: 'meal__head' }, [
     el('span', { class: `meal__ic meal__ic--${mealIconKey(meal.id)}`, html: icon[mealIconKey(meal.id)](18) }),
     el('span', { class: 'meal__name', text: meal.nome }),
-    el('button', {
+    // niente lucchetto in giornata sgarro (non ha target/blocchi)
+    sgarro ? null : el('button', {
       class: 'meal__lock', 'aria-pressed': String(locked),
       'aria-label': locked ? `${meal.nome} bloccato` : `${meal.nome} aperto`,
       html: icon[locked ? 'lockClosed' : 'lockOpen'](16),
@@ -112,9 +111,10 @@ function mealCard(meal, foods, ctx) {
     el('span', { class: 'meal__tot', text: `${round(m.kcal)} kcal` }),
   ]);
 
-  const rows = meal.righe.map((r, i) => ctx.editMode ? editFoodRow(meal.id, r, i, foods, ctx) : foodRow(meal.id, r, foods, ctx));
+  const rows = meal.righe.map((r, i) => (ctx.editMode || sgarro) ? editFoodRow(meal.id, r, i, foods, ctx) : foodRow(meal.id, r, foods, ctx));
   const kids = [head, ...rows];
-  if (ctx.editMode) kids.push(el('button', { class: 'add-food', onClick: () => ctx.addRowToMeal(meal.id) }, [
+  if (meal.righe.length === 0 && !editable) kids.push(el('div', { class: 'meal-empty', text: '—' }));
+  if (editable) kids.push(el('button', { class: 'add-food', onClick: () => ctx.addRowToMeal(meal.id) }, [
     el('span', { html: icon.plus(15) }), 'Aggiungi',
   ]));
   return el('div', { class: `meal ${locked ? 'meal--locked' : ''}` }, kids);

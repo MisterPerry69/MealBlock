@@ -129,20 +129,23 @@ test('recalcPlan: totali riflettono TUTTI i cibi (manuali + auto)', () => {
   assert.equal(Math.round(totals.prot), 31);
 });
 
-test('markSgarroDay: marca il log come SGARRO preservando le righe', () => {
+test('markSgarroDay: blank canvas — stessi pasti ma svuotati', () => {
   const log = buildLog('2026-07-27', template);
   const s = markSgarroDay(log, true);
   assert.equal(s.tipo, 'SGARRO');
-  assert.equal(s.tipoBase, 'ON'); // ricorda il tipo originale per tornare indietro
-  assert.equal(s.meals.length, log.meals.length);
+  assert.equal(s.tipoBase, 'ON');
+  assert.equal(s.meals.length, log.meals.length);   // stessi contenitori
+  assert.ok(s.meals.every((m) => m.righe.length === 0)); // ma vuoti
   assert.ok(isSgarroDay(s));
   assert.ok(!isSgarroDay(log));
 });
 
-test('markSgarroDay(false): torna al tipo base', () => {
-  const log = buildLog('2026-07-27', template); // ON
+test('markSgarroDay(false): ripristina pasti e tipo originali', () => {
+  const log = buildLog('2026-07-27', template); // ON, con alimenti
   const s = markSgarroDay(log, true);
   const back = markSgarroDay(s, false);
   assert.equal(back.tipo, 'ON');
   assert.ok(!isSgarroDay(back));
+  // i pasti originali sono tornati (pranzo aveva pollo)
+  assert.equal(back.meals.find((m) => m.id === 'pranzo').righe[0].foodId, 'pollo');
 });

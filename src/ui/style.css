@@ -57,12 +57,13 @@ input { font-family: inherit; }
 
 .daybtn {
   background: var(--sage); color: #fff; border: none; border-radius: var(--r-sm);
-  padding: 11px 17px; font-weight: 700; font-size: 14px;
-  display: flex; align-items: center; gap: 8px; min-height: var(--tap);
+  padding: 10px 12px; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; gap: 6px; min-height: var(--tap);
   box-shadow: var(--shadow);
 }
 .daybtn--off { background: var(--f); box-shadow: 0px 5px 0px rgba(138,127,184,.30); }
-.daybtn svg { width: 17px; height: 17px; }
+.daybtn svg { width: 16px; height: 16px; }
+.daybtn svg:last-child { margin-left: -2px; opacity: .85; } /* chevron */
 
 /* icon button generico (es. + in Cibi) */
 .iconbtn {
@@ -214,6 +215,7 @@ input { font-family: inherit; }
   display: flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--tap); margin-top: 8px;
 }
 .add-food svg { width: 15px; height: 15px; }
+.meal-empty { color: var(--faint); text-align: center; padding: 10px 0 4px; font-weight: 600; }
 
 .banco-actions { margin: 14px 0 6px; display: flex; gap: 10px; }
 .banco-btn {
@@ -248,6 +250,7 @@ input { font-family: inherit; }
 select.f__input { appearance: none; }
 .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .f-grid .f { margin-bottom: 10px; }
+.f-hint { font-size: 11px; color: var(--dim); margin: -2px 0 12px; line-height: 1.4; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 8px; }
 .modal-btn {
@@ -267,13 +270,16 @@ select.f__input { appearance: none; }
 /* badge sgarro sul day toggle */
 .daybtn--sgarro { background: var(--p); box-shadow: 0px 5px 0px rgba(224,116,90,.30); }
 
-/* selettore variante */
-.vpick { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.vpick__b {
-  border: 1.5px solid var(--line); background: var(--card); color: var(--dim);
-  border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 13px; min-height: 38px;
+/* header Oggi: data completa + controlli allineati */
+.ohdr { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+.ohdr__date { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.ohdr__ctrl { display: flex; align-items: center; gap: 8px; flex: none; }
+.ico-tool {
+  background: var(--card); border: none; box-shadow: var(--shadow); color: var(--ink);
+  width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
 }
-.vpick__b.is-active { background: var(--sage); border-color: var(--sage); color: #fff; }
+.ico-tool.is-active { background: var(--sage); color: #fff; }
+.ico-tool svg { width: 18px; height: 18px; }
 
 /* riga in modifica: nome cliccabile per sostituire */
 .erow__swap {
@@ -281,14 +287,22 @@ select.f__input { appearance: none; }
   border-radius: 10px; padding: 9px 11px; font-weight: 600; font-size: 14px; color: var(--ink); min-height: 40px;
 }
 
-/* tasti azione in Oggi (ricalcola / modifica) */
-.oggi-tools { display: flex; gap: 8px; margin-bottom: 16px; }
-.tool {
-  flex: 1; border: none; background: var(--card); color: var(--ink); box-shadow: var(--shadow);
-  border-radius: var(--r-sm); padding: 11px; font-weight: 600; font-size: 13px; min-height: var(--tap);
-  display: flex; align-items: center; justify-content: center; gap: 7px;
+/* menu a tendina del giorno (varianti + azioni) */
+.daymenu-backdrop { position: fixed; inset: 0; z-index: 45; background: rgba(47,58,52,.25); }
+.daymenu {
+  position: absolute; top: calc(24px + env(safe-area-inset-top) + 52px); right: 18px;
+  background: var(--card); border-radius: var(--r-sm); box-shadow: 0 12px 32px rgba(47,58,52,.22);
+  min-width: 200px; overflow: hidden; padding: 6px;
 }
-.tool svg { width: 16px; height: 16px; }
-.tool--attention { color: var(--sage-d); }
+.daymenu__i {
+  width: 100%; text-align: left; background: none; border: none; color: var(--ink);
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px;
+  font-weight: 600; font-size: 14px; min-height: 44px;
+}
+.daymenu__i:hover, .daymenu__i:active { background: var(--bg); }
+.daymenu__i svg { width: 16px; height: 16px; color: var(--sage-d); flex: none; }
+.daymenu__i.is-muted { color: var(--dim); }
+.daymenu__i.is-muted svg { opacity: 0; }
+.daymenu__i.is-danger svg { color: var(--p); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

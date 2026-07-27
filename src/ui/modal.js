@@ -44,6 +44,7 @@ export function openFoodForm({ food, onSave }) {
     title: food ? 'Modifica cibo' : 'Nuovo cibo',
     build(close) {
       const p = food?.per100g || {};
+      const rg = food?.rangeGrammatura || {};
       const nome = field('Nome', { type: 'text', value: food?.nome || '', placeholder: 'es. Petto di pollo' });
       const grid = el('div', { class: 'f-grid' });
       const kcal = field('kcal / 100g', { type: 'number', inputmode: 'numeric', min: '0', value: p.kcal ?? '' });
@@ -52,10 +53,17 @@ export function openFoodForm({ food, onSave }) {
       const fat = field('Grassi / 100g', { type: 'number', inputmode: 'decimal', min: '0', value: p.fat ?? '' });
       grid.append(kcal.wrap, carbo.wrap, prot.wrap, fat.wrap);
 
+      // range grammatura opzionale (limita quanto il motore puo scalare questo cibo)
+      const rangeGrid = el('div', { class: 'f-grid' });
+      const rmin = field('Min g (opz.)', { type: 'number', inputmode: 'numeric', min: '0', value: rg.min ?? '' });
+      const rmax = field('Max g (opz.)', { type: 'number', inputmode: 'numeric', min: '0', value: rg.max ?? '' });
+      rangeGrid.append(rmin.wrap, rmax.wrap);
+      const rangeHint = el('div', { class: 'f-hint', text: 'Limiti di grammatura per il ricalcolo automatico. Lascia vuoto per nessun limite.' });
+
       const save = el('button', { class: 'modal-btn modal-btn--primary', text: 'Salva' , onClick: () => {
         const nomeV = nome.input.value.trim();
         if (!nomeV) { nome.input.focus(); return; }
-        onSave({
+        const out = {
           nome: nomeV,
           per100g: {
             kcal: Number(kcal.input.value) || 0,
@@ -63,11 +71,15 @@ export function openFoodForm({ food, onSave }) {
             prot: Number(prot.input.value) || 0,
             fat: Number(fat.input.value) || 0,
           },
-        });
+        };
+        const minV = rmin.input.value !== '' ? Number(rmin.input.value) : null;
+        const maxV = rmax.input.value !== '' ? Number(rmax.input.value) : null;
+        if (minV != null && maxV != null) out.rangeGrammatura = { min: minV, max: maxV };
+        onSave(out);
         close();
       }});
 
-      return el('div', {}, [nome.wrap, grid, el('div', { class: 'modal-actions' }, [save])]);
+      return el('div', {}, [nome.wrap, grid, rangeGrid, rangeHint, el('div', { class: 'modal-actions' }, [save])]);
     },
   });
 }
