@@ -1,13 +1,17 @@
-// propose.js — motore "proposte" per il ricalcolo AUTO.
+// propose.js — motore "proposte" per il ricalcolo.
 //
-// Non risolve un'equazione cieca (che gonfiava un alimento per inseguire macro
-// che non ha). Ragiona per PRIORITA: prima le proteine, poi le kcal via
-// carbo/grassi. Ogni alimento AUTO viene scalato verso il macro che copre
-// meglio, entro il suo range (dal DB, o default stretto). Restituisce PROPOSTE
-// spuntabili, senza applicarle.
+// Ragiona per PRIORITA (proteine, poi carbo, poi grassi; le kcal seguono):
+//   1. AUMENTA gli alimenti gia nel piano ricchi del macro in deficit (entro range).
+//   2. Se resta deficit, PROPONE UN'AGGIUNTA dal repertorio: il cibo piu adatto
+//      a quel macro (denso in quel macro, poco nel resto).
+// Vincolo: non sforare le proteine oltre +5%. Restituisce PROPOSTE, non applica.
 
 const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
-const DEFAULT_RANGE_PCT = 0.3; // ±30% se il cibo non ha un range nel DB
+const DEFAULT_RANGE_PCT = 0.5;   // ±50% se il cibo non ha range nel DB
+const ADD_MAX_G = 300;           // grammatura massima per un'aggiunta proposta
+
+// tolleranza sotto la quale un macro e "a posto"
+const TOL = { kcal: 40, carbo: 8, prot: 5, fat: 5 };
 
 function macros(rows, foods) {
   const t = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
@@ -22,107 +26,117 @@ function macros(rows, foods) {
 function rangeFor(row, food) {
   if (food && food.rangeGrammatura) return [food.rangeGrammatura.min, food.rangeGrammatura.max];
   const g = row.grammatura || 0;
-  return [Math.max(0, Math.round(g * (1 - DEFAULT_RANGE_PCT))), Math.round(g * (1 + DEFAULT_RANGE_PCT)) || 100];
+  const hi = g > 0 ? Math.round(g * (1 + DEFAULT_RANGE_PCT)) : ADD_MAX_G;
+  return [Math.max(0, Math.round(g * (1 - DEFAULT_RANGE_PCT))), hi];
 }
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-// qual e il macro "dominante" di un cibo (quello che copre meglio)?
 function dominantMacro(food) {
   const prot = food.prot || 0, carbo = food.carbo || 0, fat = food.fat || 0;
-  // pesiamo per densita: proteine e carbo ~4 kcal/g, grassi ~9
   if (prot >= carbo && prot >= fat) return 'prot';
   if (carbo >= fat) return 'carbo';
   return 'fat';
 }
 
+// quanto un cibo e "puro" per un macro: densita del macro pesata, penalizzando
+// i macro che NON servono. Serve a scegliere l'aggiunta migliore.
+function purityFor(food, macro) {
+  const kcal = food.kcal || 1;
+  return (food[macro] || 0) / kcal; // g di macro per kcal: alto = denso ed efficiente
+}
+
 /**
- * Genera proposte di aggiustamento per le righe AUTO di un piano.
  * @returns {{ proposals, totalsIfApplied }}
- *   proposals: [{ id, tipo:'modifica', mealId, foodId, nome, daG, aG, macro }]
- *   totalsIfApplied: macro totali se si applicassero TUTTE le proposte
+ *   proposals: [{ id, tipo:'modifica'|'aggiunta', mealId, foodId, daG, aG, macro }]
  */
 export function proposeAdjustments(plan, foods) {
-  // righe piatte con riferimento
-  const auto = [];
-  const fixedRows = [];
+  // righe di lavoro (tutte, con riferimento a pasto e grammatura originale)
+  const rows = [];
   for (const meal of plan.meals) {
-    for (const r of meal.righe) {
-      if (r.auto) auto.push({ meal, r });
-      else fixedRows.push(r);
-    }
+    for (const r of meal.righe) rows.push({ mealId: meal.id, foodId: r.foodId, g0: r.grammatura, g: r.grammatura });
   }
+  // aggiunte candidate: { mealId, foodId, g }
+  const additions = [];
 
-  // grammature di lavoro (partono da quelle correnti)
-  const work = auto.map(({ r }) => r.grammatura);
+  const inPlan = new Set(rows.map((r) => r.foodId));
+  const target = plan.target;
+  const priority = ['prot', 'carbo', 'fat'];
 
-  // funzione: totale macro dato lo stato di lavoro
-  const totals = () => {
-    const rows = fixedRows.concat(auto.map(({ r }, i) => ({ foodId: r.foodId, grammatura: work[i] })));
-    return macros(rows, foods);
-  };
+  const currentTotals = () => macros(
+    rows.map((r) => ({ foodId: r.foodId, grammatura: r.g }))
+      .concat(additions.map((a) => ({ foodId: a.foodId, grammatura: a.g }))),
+    foods
+  );
 
-  // ordine di priorita dei macro da sistemare
-  const priority = ['prot', 'kcal', 'carbo', 'fat'];
+  for (const macro of priority) {
+    let cur = currentTotals();
+    let deficit = target[macro] - cur[macro];
+    if (deficit <= TOL[macro]) continue; // gia coperto (o in eccesso)
 
-  // per ogni macro in ordine, aggiusta gli alimenti AUTO il cui macro dominante
-  // e quello, per avvicinarsi al target di QUEL macro. Le proteine hanno la
-  // precedenza e NON vengono sforate dagli aggiustamenti successivi.
-  for (const target of priority) {
-    // alimenti auto che "servono" per questo macro
-    const idxs = auto
-      .map(({ r }, i) => ({ i, food: foods[r.foodId] }))
-      .filter(({ food }) => food && dominantMacro(food) === (target === 'kcal' ? 'carbo' : target));
-    if (idxs.length === 0) continue;
+    // 1) AUMENTA gli alimenti gia nel piano il cui macro dominante e questo
+    const candidates = rows.filter((r) => foods[r.foodId] && dominantMacro(foods[r.foodId]) === macro);
+    for (const r of candidates) {
+      if (deficit <= TOL[macro]) break;
+      const food = foods[r.foodId];
+      const perG = (food[macro] || 0) / 100;
+      if (perG <= 0) continue;
+      const [lo, hi] = rangeFor({ grammatura: r.g0 }, food);
+      const want = r.g + deficit / perG;
+      let next = clamp(want, Math.max(lo, r.g), hi); // solo aumenti
+      next = capProt(next, r, rows, additions, foods, target, macro);
+      if (next > r.g) {
+        deficit -= (next - r.g) * perG;
+        r.g = Math.round(next);
+      }
+    }
 
-    const cur = totals();
-    let deficit = plan.target[target] - cur[target]; // >0 manca, <0 eccede
-    if (Math.abs(deficit) < (target === 'kcal' ? 20 : 3)) continue;
-
-    // distribuisci il deficit tra gli alimenti candidati (in parti uguali)
-    for (const { i } of idxs) {
-      const food = foods[auto[i].r.foodId];
-      const perGramMacro = (food[target] || 0) / 100; // quanto di 'target' per grammo
-      if (perGramMacro <= 0) continue;
-      const [lo, hi] = rangeFor(auto[i].r, food);
-      const delta = (deficit / idxs.length) / perGramMacro; // grammi da aggiungere
-      let next = clamp(work[i] + delta, lo, hi);
-
-      // vincolo proteine: non far sforare le proteine oltre +5%
-      if (target !== 'prot') {
-        const protCap = plan.target.prot * 1.05;
-        const rows = fixedRows.concat(auto.map(({ r }, k) => ({ foodId: r.foodId, grammatura: k === i ? next : work[k] })));
-        if (macros(rows, foods).prot > protCap) {
-          // riduci next finche le proteine rientrano
-          const protPerG = (food.prot || 0) / 100;
-          if (protPerG > 0) {
-            const over = macros(rows, foods).prot - protCap;
-            next = clamp(next - over / protPerG, lo, hi);
-          }
+    // 2) Se resta deficit, PROPONI un'aggiunta: il cibo piu adatto al macro
+    cur = currentTotals();
+    deficit = target[macro] - cur[macro];
+    if (deficit > TOL[macro]) {
+      const best = Object.values(foods)
+        .filter((f) => !inPlan.has(f.id) && (f[macro] || 0) > 0 && dominantMacro(f) === macro)
+        .sort((a, b) => purityFor(b, macro) - purityFor(a, macro))[0];
+      if (best) {
+        const perG = best[macro] / 100;
+        let g = Math.round(clamp(deficit / perG, 0, ADD_MAX_G));
+        g = capProt(g, { foodId: best.id, g: 0 }, rows, additions, foods, target, macro, best);
+        if (g >= 5) {
+          const mealId = plan.meals[plan.meals.length - 1].id; // aggiunge all'ultimo pasto
+          additions.push({ mealId, foodId: best.id, g: Math.round(g) });
+          inPlan.add(best.id);
         }
       }
-      work[i] = Math.round(next);
     }
   }
 
-  // costruisci le proposte (solo dove la grammatura cambia davvero)
+  // costruisci proposte
   const proposals = [];
-  auto.forEach(({ meal, r }, i) => {
-    if (Math.round(work[i]) !== Math.round(r.grammatura)) {
-      proposals.push({
-        id: meal.id + ':' + r.foodId,
-        tipo: 'modifica',
-        mealId: meal.id,
-        foodId: r.foodId,
-        daG: Math.round(r.grammatura),
-        aG: Math.round(work[i]),
-        macro: dominantMacro(foods[r.foodId]),
-      });
+  for (const r of rows) {
+    if (Math.round(r.g) !== Math.round(r.g0)) {
+      proposals.push({ id: r.mealId + ':' + r.foodId, tipo: 'modifica', mealId: r.mealId, foodId: r.foodId, daG: Math.round(r.g0), aG: Math.round(r.g), macro: dominantMacro(foods[r.foodId]) });
     }
-  });
+  }
+  for (const a of additions) {
+    proposals.push({ id: 'add:' + a.mealId + ':' + a.foodId, tipo: 'aggiunta', mealId: a.mealId, foodId: a.foodId, daG: 0, aG: Math.round(a.g), macro: dominantMacro(foods[a.foodId]) });
+  }
 
-  // totali se si applicassero tutte le proposte
-  const totalsIfApplied = totals();
-
+  const totalsIfApplied = currentTotals();
   return { proposals, totalsIfApplied };
+}
+
+// riduce una grammatura candidata se farebbe sforare le proteine oltre +5%
+function capProt(next, target_row, rows, additions, foods, target, macro, addFood) {
+  if (macro === 'prot') return next; // stiamo proprio sistemando le proteine
+  const cap = target.prot * 1.05;
+  const trial = rows.map((r) => ({ foodId: r.foodId, grammatura: r === target_row ? next : r.g }))
+    .concat(additions.map((a) => ({ foodId: a.foodId, grammatura: a.g })));
+  if (addFood) trial.push({ foodId: addFood.id, grammatura: next });
+  const prot = macros(trial, foods).prot;
+  if (prot <= cap) return next;
+  const food = addFood || foods[target_row.foodId];
+  const protPerG = (food.prot || 0) / 100;
+  if (protPerG <= 0) return next;
+  return Math.max(0, next - (prot - cap) / protPerG);
 }

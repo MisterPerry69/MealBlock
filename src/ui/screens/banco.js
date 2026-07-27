@@ -14,6 +14,11 @@ function parseG(v) {
   const n = parseFloat(String(v).replace(',', '.'));
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
+// mostra la grammatura senza arrotondare (127.5 resta 127.5, non 128)
+function fmtG(g) {
+  const n = Number(g) || 0;
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+}
 
 export function renderBanco(root, ctx) {
   const { plan, foods } = ctx.banco;
@@ -80,14 +85,9 @@ function editRow(mealId, r, index, foods, flat, ctx) {
     ]),
     el('input', {
       class: 'erow__g', type: 'text', inputmode: 'decimal',
-      value: String(round(r.grammatura)), disabled: r.auto,
+      value: fmtG(r.grammatura),
       'aria-label': `Grammi di ${nome}`,
       onChange: (e) => ctx.bancoSetGram(mealId, index, parseG(e.target.value)),
-    }),
-    el('button', {
-      class: 'erow__auto', 'aria-pressed': String(!!r.auto),
-      text: 'AUTO', title: r.auto ? 'Grammatura automatica' : 'Grammatura manuale',
-      onClick: () => ctx.bancoToggleAuto(mealId, index),
     }),
     el('button', {
       class: 'erow__del', 'aria-label': `Rimuovi ${nome}`,

@@ -65,6 +65,28 @@ async function loadToday() {
   state.today = { log, foods: state.foods, template: variantForLog(log) };
 }
 
+// salvataggio log in background con debounce: la UI non aspetta la rete.
+let saveTimer = null;
+function queueSaveLog(log) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { store.saveLog(log).catch((e) => console.warn('saveLog fallito', e)); }, 600);
+}
+
+// applica le proposte selezionate a un piano/log: modifiche (cambia grammatura)
+// e aggiunte (inserisce una nuova riga nel pasto indicato).
+function applyProposals(planOrLog, selected) {
+  for (const p of selected) {
+    const meal = planOrLog.meals.find((m) => m.id === p.mealId);
+    if (!meal) continue;
+    if (p.tipo === 'aggiunta') {
+      meal.righe.push({ foodId: p.foodId, grammatura: p.aG, stato: 'aperta', isSgarro: false, eaten: false });
+    } else {
+      const row = meal.righe.find((r) => r.foodId === p.foodId);
+      if (row) row.grammatura = p.aG;
+    }
+  }
+}
+
 // snapshot grammature aperte per riga, per il riepilogo modifiche
 function snapshotGrams(log) {
   const map = {};
@@ -152,15 +174,31 @@ const ctx = {
     await persistAndRecalc();
   },
 
-  async toggleEaten(mealId, row) {
-    // Spuntare "mangiato" fa solo avanzare le barre: non ricalcola.
+  toggleEaten(mealId, row) {
+    // Spuntare "mangiato" fa avanzare le barre: aggiorna la UI SUBITO e salva in
+    // background (niente attesa dei 2-4s del backend).
     row.eaten = !row.eaten;
-    await store.saveLog(state.today.log);
     render();
+    queueSaveLog(state.today.log);
   },
 
   // ricalcolo forzato dall'utente (tasto refresh in Oggi)
-  async recalcNow() { await persistAndRecalc({ summary: true }); },
+  // Ricalcola in Oggi: stesso motore del banco (proposte spuntabili).
+  recalcNow() {
+    const { log, template } = state.today;
+    if (isSgarroDay(log)) return; // SGARRO: nessun target rigido
+    const flat = flatFoods(state.foods);
+    const plan = { target: template.target, meals: log.meals };
+    const { proposals } = proposeAdjustments(plan, flat);
+    openProposals({
+      proposals, foods: state.foods,
+      onApply: async (selected) => {
+        applyProposals(state.today.log, selected);
+        await store.saveLog(state.today.log);
+        render();
+      },
+    });
+  },
 
   // crea un cibo nel repertorio, ritorna il suo id
   async createFood({ nome, per100g }) {
@@ -294,13 +332,7 @@ const ctx = {
   // openBanco riceve un id-variante (o una categoria, per compat: usa la default)
   openBanco(idOrCat) {
     const tpl = variantById(idOrCat) || defaultVariant(idOrCat);
-    state.banco = {
-      plan: {
-        ...JSON.parse(JSON.stringify(tpl)),
-        meals: tpl.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, auto: r.auto ?? false })) })),
-      },
-      foods: state.foods,
-    };
+    state.banco = { plan: JSON.parse(JSON.stringify(tpl)), foods: state.foods };
     render({ resetScroll: true });
   },
 
@@ -309,12 +341,6 @@ const ctx = {
   bancoSetGram(mealId, index, grammi) {
     const meal = state.banco.plan.meals.find((m) => m.id === mealId);
     meal.righe[index].grammatura = Math.max(0, grammi || 0);
-    render();
-  },
-
-  bancoToggleAuto(mealId, index) {
-    const meal = state.banco.plan.meals.find((m) => m.id === mealId);
-    meal.righe[index].auto = !meal.righe[index].auto;
     render();
   },
 
@@ -333,26 +359,19 @@ const ctx = {
       },
       onConfirm: ({ foodId, grammatura }) => {
         const meal = state.banco.plan.meals.find((m) => m.id === mealId);
-        meal.righe.push({ foodId, grammatura, auto: false });
+        meal.righe.push({ foodId, grammatura });
         render();
       },
     });
   },
 
-  // Ricalcola = PROPONE modifiche spuntabili (priorita proteine), non le impone.
+  // Ricalcola = PROPONE modifiche/aggiunte spuntabili (priorita proteine).
   bancoAuto() {
     const flat = flatFoods(state.foods);
     const { proposals } = proposeAdjustments(state.banco.plan, flat);
     openProposals({
       proposals, foods: state.foods,
-      onApply: (selected) => {
-        for (const p of selected) {
-          const meal = state.banco.plan.meals.find((m) => m.id === p.mealId);
-          const row = meal?.righe.find((r) => r.foodId === p.foodId);
-          if (row) row.grammatura = p.aG;
-        }
-        render();
-      },
+      onApply: (selected) => { applyProposals(state.banco.plan, selected); render(); },
     });
   },
 

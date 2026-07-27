@@ -187,14 +187,15 @@ export function openProposals({ proposals, foods, onApply }) {
 
       const list = el('div', { class: 'chg-list' }, checks.map((c) => {
         const nome = foods[c.p.foodId]?.nome || c.p.foodId;
+        const isAdd = c.p.tipo === 'aggiunta';
         const box = el('button', {
           class: 'prop', 'aria-pressed': 'true',
           onClick: () => { c.on = !c.on; box.setAttribute('aria-pressed', String(c.on)); },
         }, [
           el('span', { class: 'prop__check', html: icon.check(13) }),
           el('span', { class: 'prop__body' }, [
-            el('span', { class: 'prop__name', text: nome }),
-            el('span', { class: 'prop__delta', text: `${c.p.daG}g → ${c.p.aG}g` }),
+            el('span', { class: 'prop__name' }, [isAdd ? '+ ' : '', nome]),
+            el('span', { class: 'prop__delta', text: isAdd ? `aggiungi ${c.p.aG}g` : `${c.p.daG}g → ${c.p.aG}g` }),
           ]),
           el('span', { class: 'prop__why', text: `per ${macroLabel[c.p.macro] || ''}` }),
         ]);

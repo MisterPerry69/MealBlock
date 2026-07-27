@@ -8,7 +8,8 @@ const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
 export function flatFoods(foods) {
   const out = {};
   for (const id of Object.keys(foods)) {
-    out[id] = { ...foods[id].per100g };
+    // include id e nome: il motore proposte li usa per le aggiunte
+    out[id] = { id, nome: foods[id].nome, ...foods[id].per100g };
     if (foods[id].rangeGrammatura) out[id].rangeGrammatura = foods[id].rangeGrammatura;
   }
   return out;
