@@ -226,6 +226,10 @@ input { font-family: inherit; }
   background: transparent; color: var(--dim); border-radius: 9px; padding: 6px 8px; min-width: 48px;
 }
 .erow__auto[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #fff; }
+.erow__lock { background: none; border: none; color: var(--faint); width: 32px; height: 32px; display: grid; place-items: center; }
+.erow__lock[aria-pressed="true"] { color: var(--c); }
+.erow__lock svg { width: 16px; height: 16px; }
+.erow__g.is-locked { background: transparent; border-color: transparent; color: var(--dim); }
 .erow__del { background: none; border: none; color: var(--faint); width: 32px; height: 32px; display: grid; place-items: center; }
 .erow__del svg { width: 16px; height: 16px; }
 

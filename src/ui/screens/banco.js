@@ -84,10 +84,16 @@ function editRow(mealId, r, index, foods, flat, ctx) {
       ]),
     ]),
     el('input', {
-      class: 'erow__g', type: 'text', inputmode: 'decimal',
-      value: fmtG(r.grammatura),
+      class: `erow__g ${r.locked ? 'is-locked' : ''}`, type: 'text', inputmode: 'decimal',
+      value: fmtG(r.grammatura), disabled: r.locked,
       'aria-label': `Grammi di ${nome}`,
       onChange: (e) => ctx.bancoSetGram(mealId, index, parseG(e.target.value)),
+    }),
+    el('button', {
+      class: 'erow__lock', 'aria-pressed': String(!!r.locked),
+      'aria-label': r.locked ? `${nome} bloccato, il ricalcolo non lo tocca` : `Blocca ${nome}`,
+      html: icon[r.locked ? 'lockClosed' : 'lockOpen'](16),
+      onClick: () => ctx.bancoToggleLock(mealId, index),
     }),
     el('button', {
       class: 'erow__del', 'aria-label': `Rimuovi ${nome}`,

@@ -188,7 +188,11 @@ const ctx = {
     const { log, template } = state.today;
     if (isSgarroDay(log)) return; // SGARRO: nessun target rigido
     const flat = flatFoods(state.foods);
-    const plan = { target: template.target, meals: log.meals };
+    // le righe con stato 'bloccata' (spuntate/bloccate) sono locked per il motore
+    const plan = {
+      target: template.target,
+      meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.stato === 'bloccata' })) })),
+    };
     const { proposals } = proposeAdjustments(plan, flat);
     openProposals({
       proposals, foods: state.foods,
@@ -299,16 +303,24 @@ const ctx = {
     });
   },
 
-  async setRowGram(mealId, rowIndex, grammi) {
+  setRowGram(mealId, rowIndex, grammi) {
     const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
     row.grammatura = Math.max(0, grammi || 0);
-    row.stato = 'bloccata'; // se imposto io i grammi, quella riga e "vera"
-    await persistAndRecalc({ summary: false });
+    render();
+    queueSaveLog(state.today.log);
   },
 
-  async removeRow(mealId, rowIndex) {
+  toggleRowLock(mealId, rowIndex) {
+    const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
+    row.locked = !row.locked;
+    render();
+    queueSaveLog(state.today.log);
+  },
+
+  removeRow(mealId, rowIndex) {
     state.today.log.meals.find((m) => m.id === mealId).righe.splice(rowIndex, 1);
-    await persistAndRecalc({ summary: true });
+    render();
+    queueSaveLog(state.today.log);
   },
 
   addRowToMeal(mealId) {
@@ -341,6 +353,13 @@ const ctx = {
   bancoSetGram(mealId, index, grammi) {
     const meal = state.banco.plan.meals.find((m) => m.id === mealId);
     meal.righe[index].grammatura = Math.max(0, grammi || 0);
+    render();
+  },
+
+  bancoToggleLock(mealId, index) {
+    const meal = state.banco.plan.meals.find((m) => m.id === mealId);
+    const r = meal.righe[index];
+    r.locked = !r.locked;
     render();
   },
 

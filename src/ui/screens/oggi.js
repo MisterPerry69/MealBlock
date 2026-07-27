@@ -146,18 +146,25 @@ function foodRow(mealId, r, foods, ctx) {
   ]);
 }
 
-// riga in modalita modifica: cambia grammatura, sostituisci cibo, rimuovi
+// riga in modalita modifica: blocca, cambia grammatura, sostituisci cibo, rimuovi
 function editFoodRow(mealId, r, index, foods, ctx) {
   const nome = foods[r.foodId]?.nome || r.foodId;
   return el('div', { class: 'erow' }, [
     el('button', { class: 'erow__swap', 'aria-label': `Sostituisci ${nome}`, text: nome,
       onClick: () => ctx.replaceFood(mealId, index) }),
     el('input', {
-      class: 'erow__g', type: 'text', inputmode: 'decimal',
-      value: String(round(r.grammatura)), 'aria-label': `Grammi di ${nome}`,
+      class: `erow__g ${r.locked ? 'is-locked' : ''}`, type: 'text', inputmode: 'decimal',
+      value: fmtG(r.grammatura), disabled: r.locked, 'aria-label': `Grammi di ${nome}`,
       onChange: (e) => ctx.setRowGram(mealId, index, parseFloat(String(e.target.value).replace(',', '.')) || 0),
     }),
+    el('button', { class: 'erow__lock', 'aria-pressed': String(!!r.locked),
+      'aria-label': r.locked ? `${nome} bloccato` : `Blocca ${nome}`,
+      html: icon[r.locked ? 'lockClosed' : 'lockOpen'](16),
+      onClick: () => ctx.toggleRowLock(mealId, index) }),
     el('button', { class: 'erow__del', 'aria-label': `Rimuovi ${nome}`, html: icon.trash(16),
       onClick: () => ctx.removeRow(mealId, index) }),
   ]);
 }
+
+// mostra grammi senza arrotondare
+function fmtG(g) { const n = Number(g) || 0; return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); }
