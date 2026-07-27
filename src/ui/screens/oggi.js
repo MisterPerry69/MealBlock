@@ -153,9 +153,9 @@ function editFoodRow(mealId, r, index, foods, ctx) {
     el('button', { class: 'erow__swap', 'aria-label': `Sostituisci ${nome}`, text: nome,
       onClick: () => ctx.replaceFood(mealId, index) }),
     el('input', {
-      class: 'erow__g', type: 'number', inputmode: 'numeric', min: '0',
+      class: 'erow__g', type: 'text', inputmode: 'decimal',
       value: String(round(r.grammatura)), 'aria-label': `Grammi di ${nome}`,
-      onChange: (e) => ctx.setRowGram(mealId, index, Number(e.target.value)),
+      onChange: (e) => ctx.setRowGram(mealId, index, parseFloat(String(e.target.value).replace(',', '.')) || 0),
     }),
     el('button', { class: 'erow__del', 'aria-label': `Rimuovi ${nome}`, html: icon.trash(16),
       onClick: () => ctx.removeRow(mealId, index) }),

@@ -14,7 +14,9 @@ import { renderBanco } from './screens/banco.js';
 import { renderRepertorio } from './screens/repertorio.js';
 import { renderStorico } from './screens/storico.js';
 import { recalcPlan, markSgarroDay, isSgarroDay } from '../core/day.js';
-import { openFoodForm, openSgarroForm, openRenameForm, openChangesSummary } from './modal.js';
+import { proposeAdjustments } from '../core/propose.js';
+import { flatFoods } from './format.js';
+import { openFoodForm, openSgarroForm, openRenameForm, openChangesSummary, openProposals } from './modal.js';
 
 // Se hai incollato l'URL GAS in config.js usa il backend reale, altrimenti mock.
 const store = GAS_URL ? createGasStore(GAS_URL) : createMockStore();
@@ -337,18 +339,29 @@ const ctx = {
     });
   },
 
+  // Ricalcola = PROPONE modifiche spuntabili (priorita proteine), non le impone.
   bancoAuto() {
-    const { plan } = recalcPlan(state.banco.plan, state.foods);
-    state.banco.plan = plan;
-    render();
+    const flat = flatFoods(state.foods);
+    const { proposals } = proposeAdjustments(state.banco.plan, flat);
+    openProposals({
+      proposals, foods: state.foods,
+      onApply: (selected) => {
+        for (const p of selected) {
+          const meal = state.banco.plan.meals.find((m) => m.id === p.mealId);
+          const row = meal?.righe.find((r) => r.foodId === p.foodId);
+          if (row) row.grammatura = p.aG;
+        }
+        render();
+      },
+    });
   },
 
   async bancoSave() {
-    // applica un ultimo ricalcolo auto, poi persiste la variante.
-    const { plan } = recalcPlan(state.banco.plan, state.foods);
+    // salva com'e (le grammature le hai decise tu o via proposte). Nessun
+    // ricalcolo forzato che sforerebbe.
+    const plan = state.banco.plan;
     await store.saveVariant(plan);
     state.variants = await store.getVariants();
-    // se oggi usa questa variante, aggiorna la giornata corrente.
     if (state.today && state.today.log.variantId === plan.id) {
       state.today.template = plan;
     }

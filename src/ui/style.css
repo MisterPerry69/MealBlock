@@ -212,6 +212,10 @@ input { font-family: inherit; }
 .erow { display: flex; align-items: center; gap: 10px; padding: 11px 0; }
 .erow + .erow { border-top: 1px solid var(--line); }
 .erow__name { flex: 1; font-weight: 600; font-size: 15px; }
+.erow--rich { align-items: center; }
+.erow__info { flex: 1; min-width: 0; }
+.erow--rich .erow__name { font-size: 14px; margin-bottom: 2px; }
+.meal__macros { font-size: 12px; font-weight: 600; color: var(--dim); white-space: nowrap; }
 .erow__g {
   width: 60px; text-align: right; font-weight: 700; font-size: 15px;
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); padding: 8px;
@@ -274,6 +278,38 @@ select.f__input { appearance: none; }
   border-radius: 12px; padding: 13px; font-weight: 700; font-size: 14px; min-height: var(--tap);
 }
 .modal-btn--primary { background: var(--sage); border-color: var(--sage); color: #fff; }
+
+/* ricerca cibo nel modal */
+.food-results { max-height: 240px; overflow-y: auto; margin: 10px 0 4px; }
+.food-opt {
+  width: 100%; text-align: left; background: none; border: none; border-radius: 10px;
+  padding: 10px 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 46px;
+}
+.food-opt:hover, .food-opt:active { background: var(--bg); }
+.food-opt.is-sel { background: var(--sage-t); }
+.food-opt__name { font-weight: 600; font-size: 14px; }
+.food-opt__macros { font-size: 11px; font-weight: 600; color: var(--dim); white-space: nowrap; }
+.food-none { color: var(--dim); font-size: 13px; padding: 12px; text-align: center; }
+
+/* proposte di ricalcolo (spuntabili) */
+.prop {
+  width: 100%; text-align: left; background: var(--bg); border: 1.5px solid var(--line);
+  border-radius: 12px; padding: 11px 12px; display: flex; align-items: center; gap: 11px;
+  margin-bottom: 8px; min-height: 52px;
+}
+.prop__check {
+  width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--line);
+  display: grid; place-items: center; color: #fff; flex: none;
+}
+.prop[aria-pressed="true"] .prop__check { background: var(--sage); border-color: var(--sage); }
+.prop[aria-pressed="true"] .prop__check svg { opacity: 1; }
+.prop__check svg { opacity: 0; }
+.prop[aria-pressed="false"] { opacity: .55; }
+.prop__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.prop__name { font-weight: 600; font-size: 14px; }
+.prop__delta { font-size: 13px; color: var(--sage-d); font-weight: 700; }
+.prop__why { font-size: 11px; color: var(--dim); flex: none; }
 
 /* riepilogo modifiche */
 .chg-list { display: flex; flex-direction: column; }

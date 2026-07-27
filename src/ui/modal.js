@@ -3,6 +3,12 @@
 import { el } from './dom.js';
 import { icon } from './icons.js';
 
+// parse numero accettando virgola o punto come separatore decimale
+function num(v) {
+  const n = parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
  * Apre un modal centrale. `build(close)` riceve la funzione di chiusura e
  * restituisce il contenuto (nodo). Ritorna la funzione close.
@@ -47,10 +53,11 @@ export function openFoodForm({ food, onSave }) {
       const rg = food?.rangeGrammatura || {};
       const nome = field('Nome', { type: 'text', value: food?.nome || '', placeholder: 'es. Petto di pollo' });
       const grid = el('div', { class: 'f-grid' });
-      const kcal = field('kcal / 100g', { type: 'number', inputmode: 'numeric', min: '0', value: p.kcal ?? '' });
-      const carbo = field('Carbo / 100g', { type: 'number', inputmode: 'decimal', min: '0', value: p.carbo ?? '' });
-      const prot = field('Prot / 100g', { type: 'number', inputmode: 'decimal', min: '0', value: p.prot ?? '' });
-      const fat = field('Grassi / 100g', { type: 'number', inputmode: 'decimal', min: '0', value: p.fat ?? '' });
+      // type text + inputmode decimal: accetta virgola E punto (bug fix)
+      const kcal = field('kcal / 100g', { type: 'text', inputmode: 'decimal', value: p.kcal ?? '' });
+      const carbo = field('Carbo / 100g', { type: 'text', inputmode: 'decimal', value: p.carbo ?? '' });
+      const prot = field('Prot / 100g', { type: 'text', inputmode: 'decimal', value: p.prot ?? '' });
+      const fat = field('Grassi / 100g', { type: 'text', inputmode: 'decimal', value: p.fat ?? '' });
       grid.append(kcal.wrap, carbo.wrap, prot.wrap, fat.wrap);
 
       // range grammatura opzionale (limita quanto il motore puo scalare questo cibo)
@@ -66,14 +73,14 @@ export function openFoodForm({ food, onSave }) {
         const out = {
           nome: nomeV,
           per100g: {
-            kcal: Number(kcal.input.value) || 0,
-            carbo: Number(carbo.input.value) || 0,
-            prot: Number(prot.input.value) || 0,
-            fat: Number(fat.input.value) || 0,
+            kcal: num(kcal.input.value),
+            carbo: num(carbo.input.value),
+            prot: num(prot.input.value),
+            fat: num(fat.input.value),
           },
         };
-        const minV = rmin.input.value !== '' ? Number(rmin.input.value) : null;
-        const maxV = rmax.input.value !== '' ? Number(rmax.input.value) : null;
+        const minV = rmin.input.value !== '' ? num(rmin.input.value) : null;
+        const maxV = rmax.input.value !== '' ? num(rmax.input.value) : null;
         if (minV != null && maxV != null) out.rangeGrammatura = { min: minV, max: maxV };
         onSave(out);
         close();
@@ -88,46 +95,62 @@ export function openFoodForm({ food, onSave }) {
  * Form "fuori piano": scegli un cibo esistente o creane uno al volo, poi i grammi.
  * onConfirm riceve { foodId, grammatura } (creando il cibo se nuovo via onCreateFood).
  */
-export function openSgarroForm({ foods, onCreateFood, onConfirm }) {
+export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiungi cibo', preId = null }) {
   return openModal({
-    title: 'Fuori piano',
+    title,
     build(close) {
       const list = Object.values(foods);
-      let selectedId = list[0]?.id || null;
+      let selectedId = preId;
 
-      // selettore cibo (dropdown nativo: semplice e affidabile)
-      const sel = el('select', { class: 'f__input', onChange: (e) => { selectedId = e.target.value; } },
-        list.map((f) => el('option', { value: f.id, text: `${f.nome} · ${f.per100g.kcal} kcal` })));
-      const selWrap = el('label', { class: 'f' }, [el('span', { class: 'f__label', text: 'Cibo' }), sel]);
+      // ricerca custom: campo testo + lista filtrata cliccabile coi valori
+      const search = el('input', { class: 'f__input', type: 'text', placeholder: 'Cerca un cibo…', 'aria-label': 'Cerca cibo' });
+      const results = el('div', { class: 'food-results' });
 
-      const gram = field('Grammi mangiati', { type: 'number', inputmode: 'numeric', min: '0', placeholder: 'es. 150' });
+      function renderResults() {
+        const q = search.value.trim().toLowerCase();
+        const filtered = list.filter((f) => f.nome.toLowerCase().includes(q)).slice(0, 30);
+        results.replaceChildren(...filtered.map((f) => {
+          const p = f.per100g;
+          const item = el('button', {
+            class: `food-opt ${f.id === selectedId ? 'is-sel' : ''}`,
+            onClick: () => { selectedId = f.id; renderResults(); gram.input.focus(); },
+          }, [
+            el('span', { class: 'food-opt__name', text: f.nome }),
+            el('span', { class: 'food-opt__macros' }, [
+              `${p.kcal} `,
+              el('span', { class: 'mc mc--c', text: `${p.carbo}C ` }),
+              el('span', { class: 'mc mc--p', text: `${p.prot}P ` }),
+              el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
+            ]),
+          ]);
+          return item;
+        }));
+        if (filtered.length === 0) results.append(el('div', { class: 'food-none', text: 'Nessun cibo. Creane uno nuovo qui sotto.' }));
+      }
+      search.addEventListener('input', renderResults);
+      renderResults();
 
-      const newBtn = el('button', { class: 'modal-btn', text: '+ Cibo non in lista', onClick: () => {
+      const gram = field('Grammi', { type: 'text', inputmode: 'decimal', placeholder: 'es. 150' });
+
+      const newBtn = el('button', { class: 'modal-btn', text: '+ Nuovo cibo', onClick: () => {
         close();
         openFoodForm({ onSave: (data) => {
           const id = onCreateFood(data);
-          // riapre il form fuori piano con il nuovo cibo preselezionato
-          openSgarroFormPreselect({ foods: { ...foods, [id]: { id, ...data } }, onCreateFood, onConfirm, preId: id });
+          openSgarroForm({ foods: { ...foods, [id]: { id, ...data } }, onCreateFood, onConfirm, title, preId: id });
         }});
       }});
 
       const confirm = el('button', { class: 'modal-btn modal-btn--primary', text: 'Aggiungi', onClick: () => {
-        const g = Number(gram.input.value) || 0;
-        if (!selectedId || !g) { gram.input.focus(); return; }
+        const g = parseFloat(String(gram.input.value).replace(',', '.')) || 0;
+        if (!selectedId) { search.focus(); return; }
+        if (!g) { gram.input.focus(); return; }
         onConfirm({ foodId: selectedId, grammatura: g });
         close();
       }});
 
-      return el('div', {}, [selWrap, gram.wrap, el('div', { class: 'modal-actions' }, [newBtn, confirm])]);
+      return el('div', {}, [search, results, gram.wrap, el('div', { class: 'modal-actions' }, [newBtn, confirm])]);
     },
   });
-}
-
-// variante con cibo preselezionato (dopo creazione al volo)
-function openSgarroFormPreselect({ foods, onCreateFood, onConfirm, preId }) {
-  const close = openSgarroForm({ foods, onCreateFood, onConfirm });
-  setTimeout(() => { const s = document.querySelector('.modal select'); if (s) { s.value = preId; s.dispatchEvent(new Event('change')); } }, 40);
-  return close;
 }
 
 /** Rinomina: un solo campo testo. onSave(nuovoNome). */
@@ -141,6 +164,49 @@ export function openRenameForm({ value, onSave }) {
         onSave(v); close();
       }});
       return el('div', {}, [f.wrap, el('div', { class: 'modal-actions' }, [save])]);
+    },
+  });
+}
+
+/**
+ * Modal proposte di ricalcolo: lista di modifiche spuntabili. onApply riceve
+ * l'array delle proposte selezionate.
+ */
+export function openProposals({ proposals, foods, onApply }) {
+  return openModal({
+    title: 'Proposte di ricalcolo',
+    build(close) {
+      if (!proposals.length) {
+        return el('div', {}, [
+          el('div', { class: 'empty', text: 'Il piano è già in linea. Nessuna modifica proposta.' }),
+        ]);
+      }
+
+      const checks = proposals.map((p) => ({ p, on: true }));
+      const macroLabel = { prot: 'proteine', carbo: 'carbo', fat: 'grassi', kcal: 'kcal' };
+
+      const list = el('div', { class: 'chg-list' }, checks.map((c) => {
+        const nome = foods[c.p.foodId]?.nome || c.p.foodId;
+        const box = el('button', {
+          class: 'prop', 'aria-pressed': 'true',
+          onClick: () => { c.on = !c.on; box.setAttribute('aria-pressed', String(c.on)); },
+        }, [
+          el('span', { class: 'prop__check', html: icon.check(13) }),
+          el('span', { class: 'prop__body' }, [
+            el('span', { class: 'prop__name', text: nome }),
+            el('span', { class: 'prop__delta', text: `${c.p.daG}g → ${c.p.aG}g` }),
+          ]),
+          el('span', { class: 'prop__why', text: `per ${macroLabel[c.p.macro] || ''}` }),
+        ]);
+        return box;
+      }));
+
+      const apply = el('button', { class: 'modal-btn modal-btn--primary', text: 'Applica selezionate', onClick: () => {
+        onApply(checks.filter((c) => c.on).map((c) => c.p));
+        close();
+      }});
+
+      return el('div', {}, [list, el('div', { class: 'modal-actions' }, [apply])]);
     },
   });
 }
