@@ -12,7 +12,7 @@ const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
 const TOL = { kcal: 60, carbo: 10, prot: 5, fat: 5 };
 const PROT_CAP_PCT = 1.08;       // le proteine non oltre +8% del target
 const ADD_STEP_MAX = 250;        // grammatura massima di una singola aggiunta
-const MAX_ADDS_PER_MACRO = 3;    // quante aggiunte al massimo per un macro
+const MAX_ADDS_PER_MACRO = 5;    // quante aggiunte al massimo per un macro
 
 function macros(rows, foods) {
   const t = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
@@ -111,7 +111,9 @@ export function proposeAdjustments(plan, foods) {
         .sort((a, b) => score(b) - score(a))[0];
       if (!best) break;
       const perG = best[macro] / 100;
-      let g = Math.min(ADD_STEP_MAX, Math.round(deficit / perG));
+      // RISPETTA il range del cibo: un'aggiunta non supera mai il suo max.
+      const addCap = best.rangeGrammatura ? best.rangeGrammatura.max : ADD_STEP_MAX;
+      let g = Math.min(addCap, Math.round(deficit / perG));
       if (macro !== 'prot') {
         const protPerG = (best.prot || 0) / 100;
         while (g > 0 && wouldExceedProt(protPerG, g)) g -= 5;
@@ -120,6 +122,8 @@ export function proposeAdjustments(plan, foods) {
       additions.push({ mealId: lastMeal, foodId: best.id, g });
       inPlan.add(best.id);
       adds++;
+      // se questo cibo non basta (era cappato al suo max), il loop continua e
+      // sceglie il PROSSIMO cibo adatto -> piu cibi invece di sforarne uno.
     }
   }
 
