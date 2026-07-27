@@ -1,7 +1,6 @@
 {
   "name": "MealPrep",
   "short_name": "MealPrep",
-  "description": "Le tue due giornate, già a posto.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
