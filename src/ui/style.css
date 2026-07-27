@@ -1,0 +1,294 @@
+/* ============================================================
+   MealPrep — pineapple-plus.
+   Bianco caldo, salvia, card morbide con ombra solida. C/P/F
+   hanno ognuno il suo colore (ambra/corallo/viola), richiamabile.
+   Icone Lucide. Tono caldo, cute, sereno.
+   ============================================================ */
+
+:root {
+  --bg:      #fbf6f0;   /* bianco caldo */
+  --card:    #ffffff;
+  --card-2:  #f6f1ea;   /* card bloccata */
+  --ink:     #2f3a34;
+  --dim:     #95a099;
+  --faint:   #c3ccc6;
+  --line:    #efe8df;
+
+  --sage:    #7ba890;
+  --sage-d:  #5c8a72;
+  --sage-t:  #e6f0ea;
+
+  /* colori dei macro (pineapple) */
+  --kcal:    #5c8a72;   /* salvia scuro */
+  --c:       #e0a33e;   /* ambra */
+  --p:       #e0745a;   /* corallo */
+  --f:       #8a7fb8;   /* viola */
+
+  /* ombra solida richiesta dall'utente */
+  --shadow:  0px 5px 0px rgba(123, 168, 144, .30);
+
+  --r:       20px;
+  --r-sm:    14px;
+  --tap:     44px;
+
+  --font: 'Poppins', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+body { min-height: 100dvh; padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+button { font-family: inherit; cursor: pointer; color: inherit; }
+input { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+::selection { background: var(--sage-t); }
+
+.view { max-width: 520px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 18px 20px; }
+
+/* ---------- header ---------- */
+.hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.hdr__eyebrow { font-size: 13px; color: var(--dim); font-weight: 500; }
+.hdr__title { font-size: 23px; font-weight: 700; color: var(--ink); }
+
+.daybtn {
+  background: var(--sage); color: #fff; border: none; border-radius: var(--r-sm);
+  padding: 11px 17px; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; gap: 8px; min-height: var(--tap);
+  box-shadow: var(--shadow);
+}
+.daybtn--off { background: var(--f); box-shadow: 0px 5px 0px rgba(138,127,184,.30); }
+.daybtn svg { width: 17px; height: 17px; }
+
+/* icon button generico (es. + in Cibi) */
+.iconbtn {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm);
+  width: var(--tap); height: var(--tap); display: grid; place-items: center; color: var(--sage-d);
+  box-shadow: var(--shadow);
+}
+.iconbtn svg { width: 20px; height: 20px; }
+
+/* ---------- card pasto ---------- */
+.meal {
+  background: var(--card); border-radius: var(--r);
+  padding: 4px 16px 10px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.meal--locked { background: var(--card-2); }
+
+.meal__head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 2px;
+}
+.meal__ic {
+  width: 34px; height: 34px; border-radius: 11px; flex: none;
+  display: grid; place-items: center; color: #fff;
+}
+.meal__ic svg { width: 18px; height: 18px; }
+.meal__ic--colazione { background: var(--c); }
+.meal__ic--pranzo    { background: var(--sage); }
+.meal__ic--spuntino  { background: var(--p); }
+.meal__ic--cena      { background: var(--f); }
+.meal__name { flex: 1; font-weight: 700; font-size: 16px; }
+.meal__lock { color: var(--c); display: grid; place-items: center; background: none; border: none; padding: 4px; }
+.meal__lock svg { width: 16px; height: 16px; }
+.meal__lock[aria-pressed="false"] { color: var(--faint); }
+.meal__tot { font-size: 12px; font-weight: 600; color: var(--dim); }
+
+/* riga alimento */
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.row + .row { border-top: 1px solid var(--line); }
+.chk {
+  width: 24px; height: 24px; border-radius: 50%; border: 2px solid #d7ddd9;
+  background: transparent; flex: none; display: grid; place-items: center; color: #fff; padding: 0;
+}
+.chk[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); }
+.chk svg { width: 13px; height: 13px; opacity: 0; }
+.chk[aria-pressed="true"] svg { opacity: 1; }
+
+.row__mid { flex: 1; min-width: 0; }
+.row__name { font-weight: 600; font-size: 15px; }
+.row--eaten .row__name { color: var(--dim); }
+.row__info { display: flex; gap: 8px; font-size: 11px; color: var(--dim); margin-top: 2px; font-weight: 500; flex-wrap: wrap; }
+.mc { font-weight: 700; }
+.mc--c { color: var(--c); } .mc--p { color: var(--p); } .mc--f { color: var(--f); }
+.row__g { font-weight: 700; font-size: 16px; white-space: nowrap; }
+.row__g .u { font-size: 12px; color: var(--dim); font-weight: 400; }
+
+.row__sgarro { display: inline-grid; place-items: center; color: var(--p); margin-left: 4px; }
+.row__sgarro svg { width: 14px; height: 14px; }
+
+/* aggiungi fuori piano */
+.addf {
+  width: 100%; border: 1.5px dashed #dcd4c9; background: transparent; color: var(--dim);
+  border-radius: var(--r-sm); padding: 14px; font-weight: 600; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 7px; min-height: var(--tap);
+}
+.addf svg { width: 16px; height: 16px; }
+
+/* ---------- dock: tracker + menu inglobati ---------- */
+.dock {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+  background: var(--card); border-radius: 26px 26px 0 0;
+  box-shadow: 0 -8px 28px rgba(47,58,52,.08); padding-top: 15px;
+}
+.trk {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 0 20px 14px;
+  max-width: 520px; margin: 0 auto;
+}
+.gauge { min-width: 0; text-align: left; }
+.gauge__k { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 3px; }
+.gauge__n { font-size: 12px; font-weight: 700; display: block; margin-bottom: 5px; white-space: nowrap; }
+.gauge__n .gt { color: var(--dim); font-weight: 500; }
+.gauge__track { height: 7px; background: #f0ebe3; border-radius: 99px; overflow: hidden; }
+.gauge__fill { height: 100%; border-radius: 99px; transition: width .3s cubic-bezier(.2,.7,.2,1); }
+
+.tab {
+  display: flex; justify-content: space-around; padding: 8px 0 18px;
+  border-top: 1px solid var(--line); padding-bottom: calc(18px + env(safe-area-inset-bottom));
+}
+.tab button {
+  background: none; border: none; font-size: 10px; font-weight: 600; color: var(--faint);
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 10px; min-height: 40px;
+}
+.tab button svg { width: 20px; height: 20px; }
+.tab button[aria-current="true"] { color: var(--sage-d); }
+
+/* ---------- liste (piani/cibi/storico) ---------- */
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.item {
+  background: var(--card); border-radius: var(--r-sm); padding: 15px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; box-shadow: var(--shadow); border: none;
+}
+.item__title { font-weight: 600; font-size: 15px; }
+.item__meta { font-size: 13px; color: var(--dim); font-weight: 500; }
+
+.section-label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 22px 0 10px; }
+
+/* categorie e varianti in Piani */
+.cat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cat-add { background: var(--card); border: none; box-shadow: var(--shadow); border-radius: 10px; width: 36px; height: 36px; display: grid; place-items: center; color: var(--sage-d); }
+.item--variant { padding: 8px 10px 8px 14px; }
+.variant-open { flex: 1; text-align: left; background: none; border: none; padding: 6px 0; }
+.variant-default { font-size: 10px; font-weight: 700; color: var(--sage-d); background: var(--sage-t); border-radius: 6px; padding: 2px 6px; margin-left: 8px; }
+.variant-tools { display: flex; gap: 2px; }
+.vt { background: none; border: none; color: var(--dim); width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; }
+
+.chip { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 8px; color: #fff; }
+.chip--on { background: var(--sage); } .chip--off { background: var(--f); }
+
+.empty { color: var(--dim); text-align: center; padding: 56px 24px; font-size: 14px; line-height: 1.6; }
+
+/* ---------- editor banco ---------- */
+.banco-back {
+  display: inline-flex; align-items: center; gap: 4px; background: none; border: none;
+  color: var(--dim); font-size: 13px; font-weight: 600; padding: 6px 0; min-height: var(--tap);
+}
+.banco-back svg { width: 18px; height: 18px; }
+.banco-target { font-size: 13px; color: var(--dim); margin-bottom: 18px; font-weight: 500; }
+.banco-target b { color: var(--ink); font-weight: 700; }
+
+.erow { display: flex; align-items: center; gap: 10px; padding: 11px 0; }
+.erow + .erow { border-top: 1px solid var(--line); }
+.erow__name { flex: 1; font-weight: 600; font-size: 15px; }
+.erow__g {
+  width: 60px; text-align: right; font-weight: 700; font-size: 15px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); padding: 8px;
+}
+.erow__g:disabled { color: var(--sage-d); background: transparent; border-color: transparent; }
+.erow__auto {
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; border: 1.5px solid var(--line);
+  background: transparent; color: var(--dim); border-radius: 9px; padding: 6px 8px; min-width: 48px;
+}
+.erow__auto[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #fff; }
+.erow__del { background: none; border: none; color: var(--faint); width: 32px; height: 32px; display: grid; place-items: center; }
+.erow__del svg { width: 16px; height: 16px; }
+
+.add-food {
+  width: 100%; border: none; background: var(--sage-t); color: var(--sage-d);
+  border-radius: var(--r-sm); padding: 12px; font-weight: 600; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--tap); margin-top: 8px;
+}
+.add-food svg { width: 15px; height: 15px; }
+
+.banco-actions { margin: 14px 0 6px; display: flex; gap: 10px; }
+.banco-btn {
+  flex: 1; border: none; background: var(--card); color: var(--ink); border-radius: var(--r-sm);
+  padding: 14px; font-weight: 700; font-size: 14px; min-height: var(--tap);
+  display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow);
+}
+.banco-btn--primary { background: var(--sage); color: #fff; }
+.banco-btn svg { width: 17px; height: 17px; }
+
+/* ---------- modal centrale ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgba(47,58,52,.45);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal {
+  width: 100%; max-width: 400px; background: var(--card); border-radius: var(--r);
+  box-shadow: 0 20px 50px rgba(47,58,52,.28); max-height: 88vh; overflow-y: auto;
+}
+.modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 6px; }
+.modal__title { font-size: 18px; font-weight: 700; }
+.modal__x { background: var(--bg); border: none; color: var(--dim); width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+.modal > div:last-child { padding: 10px 18px 20px; }
+
+.f { display: block; margin-bottom: 14px; }
+.f__label { display: block; font-size: 12px; color: var(--dim); font-weight: 600; margin-bottom: 6px; }
+.f__input {
+  width: 100%; font-size: 16px; padding: 12px 13px; border: 1.5px solid var(--line);
+  border-radius: 12px; background: var(--bg); color: var(--ink); font-weight: 500;
+}
+.f__input:focus { outline: none; border-color: var(--sage); }
+select.f__input { appearance: none; }
+.f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.f-grid .f { margin-bottom: 10px; }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 8px; }
+.modal-btn {
+  flex: 1; border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 12px; padding: 13px; font-weight: 700; font-size: 14px; min-height: var(--tap);
+}
+.modal-btn--primary { background: var(--sage); border-color: var(--sage); color: #fff; }
+
+/* riepilogo modifiche */
+.chg-list { display: flex; flex-direction: column; }
+.chg { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.chg__name { font-weight: 600; font-size: 14px; }
+.chg__delta { font-weight: 700; font-size: 14px; color: var(--dim); }
+.chg__arrow { color: var(--sage-d); margin: 0 2px; }
+.chg-res { margin-top: 14px; font-size: 13px; color: var(--dim); font-weight: 500; }
+
+/* badge sgarro sul day toggle */
+.daybtn--sgarro { background: var(--p); box-shadow: 0px 5px 0px rgba(224,116,90,.30); }
+
+/* selettore variante */
+.vpick { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.vpick__b {
+  border: 1.5px solid var(--line); background: var(--card); color: var(--dim);
+  border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 13px; min-height: 38px;
+}
+.vpick__b.is-active { background: var(--sage); border-color: var(--sage); color: #fff; }
+
+/* riga in modifica: nome cliccabile per sostituire */
+.erow__swap {
+  flex: 1; text-align: left; background: var(--bg); border: 1.5px solid var(--line);
+  border-radius: 10px; padding: 9px 11px; font-weight: 600; font-size: 14px; color: var(--ink); min-height: 40px;
+}
+
+/* tasti azione in Oggi (ricalcola / modifica) */
+.oggi-tools { display: flex; gap: 8px; margin-bottom: 16px; }
+.tool {
+  flex: 1; border: none; background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+  border-radius: var(--r-sm); padding: 11px; font-weight: 600; font-size: 13px; min-height: var(--tap);
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.tool svg { width: 16px; height: 16px; }
+.tool--attention { color: var(--sage-d); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
