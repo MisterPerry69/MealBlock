@@ -5,13 +5,24 @@
 // I log si caricano su richiesta. Le scritture vanno subito al backend.
 
 export function createGasStore(url) {
+  const TIMEOUT_MS = 15000; // GAS puo essere lento, ma non all'infinito
+
   async function call(action, payload = {}) {
-    const res = await fetch(url, {
-      method: 'POST',
-      // text/plain evita il preflight CORS che GAS non gestisce bene.
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...payload }),
-    });
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // niente preflight CORS
+        body: JSON.stringify({ action, ...payload }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      throw new Error(ctrl.signal.aborted ? 'Il server non risponde (timeout).' : 'Connessione assente.');
+    } finally {
+      clearTimeout(t);
+    }
     const out = await res.json();
     if (!out.ok) throw new Error(out.error || 'errore backend');
     return out.data;

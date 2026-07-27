@@ -408,14 +408,32 @@ async function seedIfEmpty() {
   await store.saveSchedule(seedSchedule);
 }
 
+function hideLoader() {
+  const l = document.getElementById('loader');
+  if (l) { l.classList.add('is-hidden'); setTimeout(() => l.remove(), 300); }
+}
+function showLoaderError(msg) {
+  const l = document.getElementById('loader');
+  if (!l) return;
+  l.querySelector('.loader__spin')?.remove();
+  l.querySelector('.loader__txt').textContent = msg;
+}
+
 async function boot() {
-  await seedIfEmpty();
-  state.foods = await store.getFoods();
-  state.variants = await store.getVariants();
-  state.schedule = await store.getSchedule();
-  await loadToday();
-  wireTabs();
-  render();
+  try {
+    await seedIfEmpty();
+    state.foods = await store.getFoods();
+    state.variants = await store.getVariants();
+    state.schedule = await store.getSchedule();
+    await loadToday();
+    wireTabs();
+    render();
+    hideLoader();
+  } catch (e) {
+    console.error(e);
+    showLoaderError('Impossibile caricare i dati. Controlla la connessione e riapri.');
+    return;
+  }
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

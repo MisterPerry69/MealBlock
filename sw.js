@@ -2,7 +2,7 @@
 // Strategia v1 (da design): l'app carica dalla rete quando c'e; offline
 // serve l'ultima versione in cache. Le modifiche richiedono rete.
 
-const CACHE = 'mealprep-v5';
+const CACHE = 'mealprep-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -40,6 +40,11 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Solo richieste allo stesso origine (l'app). GAS, Google Fonts ecc. vanno
+  // dritte alla rete senza passare dal SW: mai servire dati backend dalla cache.
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
+
   e.respondWith(
     fetch(e.request)
       .then((res) => {

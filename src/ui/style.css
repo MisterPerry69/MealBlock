@@ -50,6 +50,22 @@ input { font-family: inherit; }
 
 .view { max-width: 520px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 18px 20px; }
 
+/* ---------- loader ---------- */
+.loader {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  transition: opacity .25s ease;
+}
+.loader.is-hidden { opacity: 0; pointer-events: none; }
+.loader__spin {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 3px solid var(--sage-t); border-top-color: var(--sage);
+  animation: loader-spin .8s linear infinite;
+}
+.loader__txt { font-size: 13px; font-weight: 600; color: var(--dim); }
+@keyframes loader-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loader__spin { animation-duration: 2s; } }
+
 /* ---------- header ---------- */
 .hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
 .hdr__eyebrow { font-size: 13px; color: var(--dim); font-weight: 500; }
