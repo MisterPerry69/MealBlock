@@ -7,16 +7,25 @@ import { createMockStore } from '../data/store.js';
 import { createGasStore } from '../data/gasStore.js';
 import { GAS_URL } from '../data/config.js';
 import { seedFoods, seedTemplates, seedSchedule } from '../data/seed.js';
-import { buildLog, recalcLog, weekdayKey, switchDayType } from '../core/day.js';
+import { buildLog, weekdayKey, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
+import { optimizePlan } from '../core/optimize.js';
+import { flatFoods } from './format.js';
 import { renderOggi } from './screens/oggi.js';
 import { renderPiani } from './screens/piani.js';
 import { renderBanco } from './screens/banco.js';
 import { renderRepertorio } from './screens/repertorio.js';
 import { renderStorico } from './screens/storico.js';
-import { recalcPlan, markSgarroDay, isSgarroDay } from '../core/day.js';
-import { proposeAdjustments } from '../core/propose.js';
-import { flatFoods } from './format.js';
-import { openFoodForm, openSgarroForm, openRenameForm, openChangesSummary, openProposals } from './modal.js';
+import { openFoodForm, openSgarroForm, openRenameForm, openProposals } from './modal.js';
+
+// converte l'output dell'ottimizzatore in proposte per il modal (modifiche + aggiunte)
+function buildProposals(plan, foods) {
+  const flat = flatFoods(foods);
+  const { changes, additions } = optimizePlan(plan, flat);
+  const proposals = [];
+  for (const c of changes) proposals.push({ id: c.mealId + ':' + c.foodId, tipo: 'modifica', mealId: c.mealId, foodId: c.foodId, daG: c.daG, aG: c.aG });
+  for (const a of additions) proposals.push({ id: 'add:' + a.mealId + ':' + a.foodId, tipo: 'aggiunta', mealId: a.mealId, foodId: a.foodId, daG: 0, aG: a.grammatura });
+  return proposals;
+}
 
 // Se hai incollato l'URL GAS in config.js usa il backend reale, altrimenti mock.
 const store = GAS_URL ? createGasStore(GAS_URL) : createMockStore();
@@ -56,10 +65,11 @@ async function loadToday() {
   const categoriaPrevista = state.schedule.mappa[weekdayKey(iso)];
   let log = await store.getLog(iso);
   if (!log) {
+    // Il log di Oggi nasce IDENTICO al piano (gia ottimizzato nel banco): niente
+    // ricalcolo automatico che cambierebbe le grammature. Oggi == Piano.
     const tpl = defaultVariant(categoriaPrevista);
     log = buildLog(iso, tpl);
     log.variantId = tpl.id;
-    log = recalcLog(log, tpl.target, state.foods);
     await store.saveLog(log);
   }
   state.today = { log, foods: state.foods, template: variantForLog(log) };
@@ -87,42 +97,13 @@ function applyProposals(planOrLog, selected) {
   }
 }
 
-// snapshot grammature aperte per riga, per il riepilogo modifiche
-function snapshotGrams(log) {
-  const map = {};
-  for (const meal of log.meals) for (const r of meal.righe) if (r.stato === 'aperta') map[meal.id + ':' + r.foodId] = r.grammatura;
-  return map;
-}
-function diffGrams(before, log, foods) {
-  const changes = [];
-  for (const meal of log.meals) for (const r of meal.righe) {
-    if (r.stato !== 'aperta') continue;
-    const key = meal.id + ':' + r.foodId;
-    const prima = before[key];
-    if (prima != null && Math.round(prima) !== Math.round(r.grammatura)) {
-      changes.push({ nome: foods[r.foodId]?.nome || r.foodId, prima: Math.round(prima), dopo: Math.round(r.grammatura) });
-    }
-  }
-  return changes;
-}
-
-// Ricalcola e persiste. Un giorno SGARRO non insegue il target (nessun ricalcolo
-// delle grammature): si limita a registrare cio che c'e.
-async function persistAndRecalc({ summary = false } = {}) {
-  const { log, template } = state.today;
-  let next, changes = [], residual = null;
-  if (isSgarroDay(log)) {
-    next = log; // SGARRO: nessun target rigido, nessuna ridistribuzione
-  } else {
-    const before = snapshotGrams(log);
-    next = recalcLog(log, template.target, state.foods);
-    changes = diffGrams(before, next, state.foods);
-    residual = next.residual;
-  }
-  state.today.log = next;
-  await store.saveLog(next);
+// Persiste il log corrente: render SUBITO, salvataggio in background (niente
+// attesa dei secondi del GAS). NON ricalcola: le grammature le decide l'utente o
+// il tasto Ricalcola (che apre le proposte). Il cambio giorno/variante non deve
+// toccare le grammature.
+function persistToday() {
   render();
-  if (summary && !isSgarroDay(next)) openChangesSummary({ changes, residual });
+  queueSaveLog(state.today.log);
 }
 
 // ---- azioni passate alle schermate via ctx ----
@@ -146,7 +127,7 @@ const ctx = {
     next.variantId = tpl.id;
     state.today.log = next;
     state.today.template = tpl;
-    await persistAndRecalc();
+    persistToday();
   },
 
   // applica una variante specifica alla giornata di oggi
@@ -157,21 +138,21 @@ const ctx = {
     next.variantId = tpl.id;
     state.today.log = next;
     state.today.template = tpl;
-    await persistAndRecalc();
+    persistToday();
   },
 
   // hold su ON/OFF: attiva/disattiva la giornata SGARRO (terzo stato, no target).
   async toggleSgarroDay() {
     const log = state.today.log;
     state.today.log = markSgarroDay(log, !isSgarroDay(log));
-    await persistAndRecalc();
+    persistToday();
   },
 
   async toggleMealLock(mealId) {
     const meal = state.today.log.meals.find((m) => m.id === mealId);
     const locked = meal.righe.every((r) => r.stato === 'bloccata');
     meal.righe.forEach((r) => (r.stato = locked ? 'aperta' : 'bloccata'));
-    await persistAndRecalc();
+    persistToday();
   },
 
   toggleEaten(mealId, row) {
@@ -187,13 +168,12 @@ const ctx = {
   recalcNow() {
     const { log, template } = state.today;
     if (isSgarroDay(log)) return; // SGARRO: nessun target rigido
-    const flat = flatFoods(state.foods);
     // le righe con stato 'bloccata' (spuntate/bloccate) sono locked per il motore
     const plan = {
       target: template.target,
       meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.stato === 'bloccata' })) })),
     };
-    const { proposals } = proposeAdjustments(plan, flat);
+    const proposals = buildProposals(plan, state.foods);
     openProposals({
       proposals, foods: state.foods,
       onApply: async (selected) => {
@@ -226,7 +206,7 @@ const ctx = {
       onConfirm: async ({ foodId, grammatura }) => {
         const meal = state.today.log.meals[state.today.log.meals.length - 1];
         meal.righe.push({ foodId, grammatura, stato: 'bloccata', isSgarro: true, eaten: true });
-        await persistAndRecalc({ summary: true });
+        persistToday();
       },
     });
   },
@@ -298,7 +278,7 @@ const ctx = {
       onConfirm: async ({ foodId, grammatura }) => {
         const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
         row.foodId = foodId; row.grammatura = grammatura;
-        await persistAndRecalc({ summary: true });
+        persistToday();
       },
     });
   },
@@ -333,7 +313,7 @@ const ctx = {
       onConfirm: async ({ foodId, grammatura }) => {
         state.today.log.meals.find((m) => m.id === mealId).righe.push(
           { foodId, grammatura, stato: 'aperta', isSgarro: false, eaten: false });
-        await persistAndRecalc({ summary: true });
+        persistToday();
       },
     });
   },
@@ -384,10 +364,9 @@ const ctx = {
     });
   },
 
-  // Ricalcola = PROPONE modifiche/aggiunte spuntabili (priorita proteine).
+  // Ricalcola = PROPONE modifiche/aggiunte spuntabili (ottimizzatore multi-macro).
   bancoAuto() {
-    const flat = flatFoods(state.foods);
-    const { proposals } = proposeAdjustments(state.banco.plan, flat);
+    const proposals = buildProposals(state.banco.plan, state.foods);
     openProposals({
       proposals, foods: state.foods,
       onApply: (selected) => { applyProposals(state.banco.plan, selected); render(); },
@@ -395,15 +374,32 @@ const ctx = {
   },
 
   async bancoSave() {
-    // salva com'e (le grammature le hai decise tu o via proposte). Nessun
-    // ricalcolo forzato che sforerebbe.
     const plan = state.banco.plan;
     await store.saveVariant(plan);
     state.variants = await store.getVariants();
-    if (state.today && state.today.log.variantId === plan.id) {
-      state.today.template = plan;
-    }
+
+    // se OGGI usa questa variante, chiedi se aggiornare la giornata al nuovo piano
+    const oggiUsaVariante = state.today && state.today.log.variantId === plan.id && !isSgarroDay(state.today.log);
     state.banco = null;
+
+    if (oggiUsaVariante) {
+      state.today.template = plan;
+      const conferma = confirm('Hai modificato il piano di oggi. Aggiornare la giornata di oggi al nuovo piano? (le spunte "mangiato" verranno mantenute dove possibile)');
+      if (conferma) {
+        const fresh = buildLog(state.today.log.data, plan);
+        fresh.variantId = plan.id;
+        // mantieni le spunte dei cibi ancora presenti
+        for (const m of fresh.meals) {
+          const old = state.today.log.meals.find((x) => x.id === m.id);
+          for (const r of m.righe) {
+            const oldR = old?.righe.find((x) => x.foodId === r.foodId);
+            if (oldR?.eaten) r.eaten = true;
+          }
+        }
+        state.today.log = fresh;
+        await store.saveLog(fresh);
+      }
+    }
     render({ resetScroll: true });
   },
 };

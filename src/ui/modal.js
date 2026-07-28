@@ -183,11 +183,12 @@ export function openProposals({ proposals, foods, onApply }) {
       }
 
       const checks = proposals.map((p) => ({ p, on: true }));
-      const macroLabel = { prot: 'proteine', carbo: 'carbo', fat: 'grassi', kcal: 'kcal' };
 
       const list = el('div', { class: 'chg-list' }, checks.map((c) => {
         const nome = foods[c.p.foodId]?.nome || c.p.foodId;
         const isAdd = c.p.tipo === 'aggiunta';
+        const su = c.p.aG > c.p.daG;
+        const verso = isAdd ? 'aggiungi' : (su ? '↑' : '↓');
         const box = el('button', {
           class: 'prop', 'aria-pressed': 'true',
           onClick: () => { c.on = !c.on; box.setAttribute('aria-pressed', String(c.on)); },
@@ -197,7 +198,7 @@ export function openProposals({ proposals, foods, onApply }) {
             el('span', { class: 'prop__name' }, [isAdd ? '+ ' : '', nome]),
             el('span', { class: 'prop__delta', text: isAdd ? `aggiungi ${c.p.aG}g` : `${c.p.daG}g → ${c.p.aG}g` }),
           ]),
-          el('span', { class: 'prop__why', text: `per ${macroLabel[c.p.macro] || ''}` }),
+          el('span', { class: 'prop__why', text: verso }),
         ]);
         return box;
       }));
