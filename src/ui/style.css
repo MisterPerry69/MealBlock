@@ -275,6 +275,14 @@ select.f__input { appearance: none; }
 .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .f-grid .f { margin-bottom: 10px; }
 .f-hint { font-size: 11px; color: var(--dim); margin: -2px 0 12px; line-height: 1.4; }
+.acc-toggle {
+  width: 100%; text-align: left; background: var(--bg); border: 1.5px solid var(--line);
+  border-radius: 12px; padding: 11px 12px; display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink); margin-bottom: 12px; line-height: 1.3;
+}
+.acc-box { width: 22px; height: 22px; flex: none; border: 2px solid var(--line-2, #d7ddd9); border-radius: 6px; display: grid; place-items: center; color: #fff; }
+.acc-toggle[aria-pressed="true"] .acc-box { background: var(--sage); border-color: var(--sage); }
+.acc-toggle[aria-pressed="false"] .acc-box svg { opacity: 0; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 8px; }
 .modal-btn {
@@ -327,7 +335,12 @@ select.f__input { appearance: none; }
 .daybtn--sgarro { background: var(--p); box-shadow: 0px 5px 0px rgba(224,116,90,.30); }
 
 /* header Oggi: data completa + controlli allineati */
-.ohdr { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+.ohdr {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  /* header fisso: resta in cima mentre scorri (utile in modalita modifica) */
+  position: sticky; top: 0; z-index: 15;
+  background: var(--bg); padding: 12px 0 12px; margin: -12px 0 12px;
+}
 .ohdr__date { font-size: 18px; font-weight: 700; line-height: 1.2; }
 .ohdr__ctrl { display: flex; align-items: center; gap: 8px; flex: none; }
 .ico-tool {

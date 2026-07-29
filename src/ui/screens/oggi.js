@@ -3,7 +3,7 @@
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { renderTracker } from '../tracker.js';
-import { eatenMacros, mealMacros, flatFoods, round } from '../format.js';
+import { eatenMacros, logMacros, mealMacros, flatFoods, round } from '../format.js';
 import { weekdayKey, isSgarroDay } from '../../core/day.js';
 import { macrosOfRows } from '../../core/solver.js';
 
@@ -39,7 +39,10 @@ export function renderOggi(root, ctx) {
   ]));
 
   const target = sgarro ? sgarroTarget(log, foods) : template.target;
-  renderTracker(eatenMacros(log, foods), target);
+  // in modalita modifica mostro il TOTALE della giornata (come nei piani), cosi
+  // vedo dove arriva il piano mentre modifico; altrimenti mostro il MANGIATO.
+  const shown = ctx.editMode ? logMacros(log, foods) : eatenMacros(log, foods);
+  renderTracker(shown, target);
 }
 
 // giornata SGARRO: il "target" e il totale stesso (barre piene, no colpa)

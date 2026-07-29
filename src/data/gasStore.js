@@ -42,6 +42,7 @@ export function createGasStore(url) {
 
   return {
     async getFoods() { return (await ensure()).foods; },
+    async getLogs() { return (await ensure()).logs || []; },
     async saveFood(food) {
       const saved = await call('saveFood', { food });
       if (cache) cache.foods[saved.id] = saved;
@@ -75,6 +76,23 @@ export function createGasStore(url) {
       return saved;
     },
     async getLog(dateISO) { return call('getLog', { data: dateISO }); },
-    async saveLog(log) { return call('saveLog', { log }); },
+    async saveLog(log) {
+      const saved = await call('saveLog', { log });
+      // mantieni la cache logs coerente (per lo storico senza ricaricare)
+      if (cache) {
+        cache.logs = cache.logs || [];
+        const i = cache.logs.findIndex((l) => l.data === log.data);
+        if (i >= 0) cache.logs[i] = log; else cache.logs.unshift(log);
+      }
+      return saved;
+    },
+    // invio "best effort" mentre la pagina si chiude: sendBeacon non viene
+    // interrotto dalla chiusura/sospensione della PWA.
+    saveLogBeacon(log) {
+      try {
+        const body = JSON.stringify({ action: 'saveLog', log });
+        return navigator.sendBeacon(url, new Blob([body], { type: 'text/plain;charset=utf-8' }));
+      } catch (e) { return false; }
+    },
   };
 }

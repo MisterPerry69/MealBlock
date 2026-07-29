@@ -65,21 +65,50 @@ async function loadToday() {
   const categoriaPrevista = state.schedule.mappa[weekdayKey(iso)];
   let log = await store.getLog(iso);
   if (!log) {
-    // Il log di Oggi nasce IDENTICO al piano (gia ottimizzato nel banco): niente
-    // ricalcolo automatico che cambierebbe le grammature. Oggi == Piano.
+    // Il log di Oggi nasce IDENTICO al piano (gia ottimizzato nel banco).
     const tpl = defaultVariant(categoriaPrevista);
     log = buildLog(iso, tpl);
     log.variantId = tpl.id;
-    await store.saveLog(log);
+    saveLogReliable(log);
   }
   state.today = { log, foods: state.foods, template: variantForLog(log) };
 }
 
-// salvataggio log in background con debounce: la UI non aspetta la rete.
+// ---- salvataggio del log sul backend (unica fonte di verita, condivisa tra
+//      dispositivi). Salvataggio IMMEDIATO, non bloccante. Un piccolo debounce
+//      (250ms) coalizza modifiche rapide; un flush garantito quando l'app va in
+//      background evita di perdere l'ultima modifica.
+let pendingLog = null;
 let saveTimer = null;
-function queueSaveLog(log) {
+
+function flushSave({ beacon = false } = {}) {
+  if (!pendingLog) return;
+  const log = pendingLog;
+  pendingLog = null;
+  clearTimeout(saveTimer); saveTimer = null;
+  // se l'app sta chiudendo/andando in background, usa sendBeacon (non interrotto)
+  if (beacon && store.saveLogBeacon && store.saveLogBeacon(log)) return;
+  store.saveLog(log).catch((e) => console.warn('saveLog fallito', e));
+}
+
+function saveLogReliable(log) {
+  // aggiorna subito lo storico in memoria (UI coerente)
+  const i = state.history.findIndex((l) => l.data === log.data);
+  if (i >= 0) state.history[i] = log; else state.history.unshift(log);
+  // programma il salvataggio (breve debounce), ma tienilo pronto per il flush
+  pendingLog = log;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { store.saveLog(log).catch((e) => console.warn('saveLog fallito', e)); }, 600);
+  saveTimer = setTimeout(flushSave, 250);
+}
+
+// compat: le chiamate esistenti usano queueSaveLog
+function queueSaveLog(log) { saveLogReliable(log); }
+
+// quando l'app va in background o si chiude, forza subito il salvataggio pendente
+function installSaveGuards() {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave({ beacon: true }); });
+  window.addEventListener('pagehide', () => flushSave({ beacon: true }));
+  window.addEventListener('beforeunload', () => flushSave({ beacon: true }));
 }
 
 // applica le proposte selezionate a un piano/log: modifiche (cambia grammatura)
@@ -185,9 +214,9 @@ const ctx = {
   },
 
   // crea un cibo nel repertorio, ritorna il suo id
-  async createFood({ nome, per100g }) {
-    const id = nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-    const food = { id, nome, per100g };
+  async createFood(data) {
+    const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
+    const food = { id, ...data }; // include per100g, rangeGrammatura, accessorio
     state.foods[id] = food;
     await store.saveFood(food);
     return id;
@@ -472,8 +501,10 @@ async function boot() {
     state.foods = await store.getFoods();
     state.variants = await store.getVariants();
     state.schedule = await store.getSchedule();
+    state.history = (await store.getLogs?.()) || [];
     await loadToday();
     wireTabs();
+    installSaveGuards();
     render();
     hideLoader();
   } catch (e) {

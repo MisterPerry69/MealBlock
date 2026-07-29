@@ -60,5 +60,6 @@ export function createMockStore(seed = {}) {
 
     async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
     async saveLog(log) { logs[log.data] = clone(log); return clone(log); },
+    async getLogs() { return Object.values(clone(logs)).sort((a, b) => (a.data < b.data ? 1 : -1)); },
   };
 }
