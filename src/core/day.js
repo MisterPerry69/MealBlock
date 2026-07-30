@@ -43,6 +43,20 @@ export function isSgarroDay(log) {
 }
 
 /**
+ * Esito di una giornata per lo storico/calendario. Tre stati:
+ *   'ok'     = ho spuntato almeno un cibo e nessuno sgarro
+ *   'sgarro' = giornata SGARRO, oppure contiene righe fuori piano
+ *   'vuoto'  = non ho tracciato nulla (nessuna spunta)
+ */
+export function dayStatus(log) {
+  if (!log) return { stato: 'vuoto' };
+  const righe = log.meals.flatMap((m) => m.righe);
+  if (isSgarroDay(log) || righe.some((r) => r.isSgarro)) return { stato: 'sgarro' };
+  if (righe.some((r) => r.eaten)) return { stato: 'ok' };
+  return { stato: 'vuoto' };
+}
+
+/**
  * Marca (o smarca) un log come giornata SGARRO.
  * Attivando: "blank canvas" — stessi pasti (contenitori) ma SVUOTATI, cosi
  * l'utente aggiunge solo cio che ha davvero mangiato. I pasti originali sono

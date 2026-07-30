@@ -63,7 +63,10 @@ function variantForLog(log) {
 async function loadToday() {
   const iso = todayISO();
   const categoriaPrevista = state.schedule.mappa[weekdayKey(iso)];
-  let log = await store.getLog(iso);
+  // il log di oggi e gia tra i logs scaricati al boot (getAll): niente chiamata
+  // extra. Solo se non c'e lo cerco puntualmente.
+  let log = state.history.find((l) => l.data === iso) || null;
+  if (!log) log = await store.getLog(iso);
   if (!log) {
     // Il log di Oggi nasce IDENTICO al piano (gia ottimizzato nel banco).
     const tpl = defaultVariant(categoriaPrevista);
@@ -140,6 +143,7 @@ const ctx = {
   get foods() { return state.foods; },
   get today() { return state.today; },
   get history() { return state.history; },
+  rerender: () => render(),
   // varianti
   variantsOf: (cat) => variantsOf(cat),
   defaultVariant: (cat) => defaultVariant(cat),

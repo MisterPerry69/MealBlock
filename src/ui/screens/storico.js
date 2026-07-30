@@ -1,37 +1,74 @@
-// storico.js — i giorni passati. Nessun giudizio, solo dati.
+// storico.js — calendario mensile. Ogni giorno: ok / sgarro / non tracciato.
 
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
-import { logMacros, round } from '../format.js';
+import { dayStatus } from '../../core/day.js';
 
-const MON = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
-function shortDate(iso){ const [,m,d]=iso.split('-').map(Number); return `${d} ${MON[m-1]}`; }
+const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+const DOW = ['L','M','M','G','V','S','D']; // lun..dom
+
+function iso(y, m, d) { return `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+// stato di navigazione del calendario (mese visualizzato), persistente tra render
+let viewY = null, viewM = null;
 
 export function renderStorico(root, ctx) {
   clearTracker();
+  const today = new Date();
+  if (viewY === null) { viewY = today.getFullYear(); viewM = today.getMonth(); }
+
+  // indicizza i log per data
+  const byDate = {};
+  for (const log of ctx.history) byDate[log.data] = log;
+
+  // header con navigazione mese
   root.append(el('div', { class: 'hdr' }, [
     el('div', {}, [el('div', { class: 'hdr__title', text: 'Storico' })]),
   ]));
 
-  const logs = ctx.history;
-  if (logs.length === 0) {
-    root.append(el('div', { class: 'empty', text: 'I giorni compaiono qui man mano che li vivi.' }));
-    return;
-  }
+  root.append(el('div', { class: 'cal-nav' }, [
+    el('button', { class: 'cal-arrow', 'aria-label': 'Mese precedente', html: icon.back(20), onClick: () => { shiftMonth(-1); ctx.rerender(); } }),
+    el('div', { class: 'cal-title', text: `${MESI[viewM]} ${viewY}` }),
+    el('button', { class: 'cal-arrow', 'aria-label': 'Mese successivo', html: icon.back(20).replace('m15 18-6-6 6-6','m9 18 6-6-6-6'), onClick: () => { shiftMonth(1); ctx.rerender(); } }),
+  ]));
 
-  const stack = el('div', { class: 'stack' });
-  for (const log of logs) {
-    const m = logMacros(log, ctx.foods);
-    const sgarri = log.meals.reduce((n, meal) => n + meal.righe.filter((r) => r.isSgarro).length, 0);
-    stack.append(el('div', { class: 'item' }, [
-      el('div', { style: 'display:flex;align-items:center;gap:10px' }, [
-        el('span', { class: `chip chip--${log.tipo === 'ON' ? 'on' : 'off'}`, text: log.tipo }),
-        el('span', { class: 'item__meta', text: shortDate(log.data) }),
-        sgarri > 0 ? el('span', { class: 'row__sgarro', html: icon.offplan(14), title: `${sgarri} fuori piano` }) : null,
-      ]),
-      el('span', { class: 'item__meta', text: `${round(m.kcal)} kcal` }),
+  // intestazione giorni settimana
+  const grid = el('div', { class: 'cal-grid' });
+  for (const d of DOW) grid.append(el('div', { class: 'cal-dow', text: d }));
+
+  // celle vuote prima del giorno 1 (lun=0)
+  const first = new Date(viewY, viewM, 1);
+  const offset = (first.getDay() + 6) % 7; // getDay: dom=0 -> vogliamo lun=0
+  for (let i = 0; i < offset; i++) grid.append(el('div', { class: 'cal-cell cal-cell--empty' }));
+
+  const daysInMonth = new Date(viewY, viewM + 1, 0).getDate();
+  const todayISO = iso(today.getFullYear(), today.getMonth(), today.getDate());
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dISO = iso(viewY, viewM, d);
+    const log = byDate[dISO];
+    const st = dayStatus(log).stato; // 'ok' | 'sgarro' | 'vuoto'
+    const isToday = dISO === todayISO;
+    grid.append(el('div', { class: `cal-cell cal-cell--${st} ${isToday ? 'is-today' : ''}` }, [
+      el('span', { class: 'cal-day', text: String(d) }),
+      st === 'ok' ? el('span', { class: 'cal-mark cal-mark--ok', html: icon.check(12) })
+        : st === 'sgarro' ? el('span', { class: 'cal-mark cal-mark--ko', html: icon.offplan(12) })
+        : el('span', { class: 'cal-mark cal-mark--none' }),
     ]));
   }
-  root.append(stack);
+  root.append(grid);
+
+  // legenda
+  root.append(el('div', { class: 'cal-legend' }, [
+    el('span', {}, [el('span', { class: 'lg lg--ok', html: icon.check(11) }), 'in linea']),
+    el('span', {}, [el('span', { class: 'lg lg--ko', html: icon.offplan(11) }), 'sgarro']),
+    el('span', {}, [el('span', { class: 'lg lg--none' }), 'non tracciato']),
+  ]));
+}
+
+function shiftMonth(delta) {
+  viewM += delta;
+  if (viewM < 0) { viewM = 11; viewY--; }
+  else if (viewM > 11) { viewM = 0; viewY++; }
 }
