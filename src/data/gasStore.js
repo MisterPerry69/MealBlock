@@ -86,13 +86,5 @@ export function createGasStore(url) {
       }
       return saved;
     },
-    // invio "best effort" mentre la pagina si chiude: sendBeacon non viene
-    // interrotto dalla chiusura/sospensione della PWA.
-    saveLogBeacon(log) {
-      try {
-        const body = JSON.stringify({ action: 'saveLog', log });
-        return navigator.sendBeacon(url, new Blob([body], { type: 'text/plain;charset=utf-8' }));
-      } catch (e) { return false; }
-    },
   };
 }

@@ -78,26 +78,22 @@ async function loadToday() {
 }
 
 // ---- salvataggio del log sul backend (unica fonte di verita, condivisa tra
-//      dispositivi). Salvataggio IMMEDIATO, non bloccante. Un piccolo debounce
-//      (250ms) coalizza modifiche rapide; un flush garantito quando l'app va in
-//      background evita di perdere l'ultima modifica.
-let pendingLog = null;
-let saveTimer = null;
-
-function flushSave({ beacon = false } = {}) {
-  if (!pendingLog) return;
-  const log = pendingLog;
-  pendingLog = null;
-  clearTimeout(saveTimer); saveTimer = null;
-  // se l'app sta chiudendo/andando in background, usa sendBeacon (non interrotto)
-  if (beacon && store.saveLogBeacon && store.saveLogBeacon(log)) { saveStatus('salvato'); return; }
+//      dispositivi). Salvataggio DIRETTO e IMMEDIATO a ogni azione: niente
+//      debounce, niente sendBeacon (che verso GAS falliva silenziosamente
+//      dicendo "salvato" senza scrivere). Semplice e affidabile.
+function saveLogReliable(log) {
+  log.savedAt = new Date().toISOString(); // timestamp con orario
+  // aggiorna subito lo storico in memoria (UI coerente)
+  const i = state.history.findIndex((l) => l.data === log.data);
+  if (i >= 0) state.history[i] = log; else state.history.unshift(log);
+  // invia SUBITO al backend
   saveStatus('salvo…');
   store.saveLog(log)
     .then(() => saveStatus('salvato'))
     .catch((e) => saveStatus('errore: ' + (e && e.message ? e.message : e)));
 }
 
-// indicatore di stato salvataggio, visibile a schermo (per capire se/perche fallisce)
+// indicatore di stato salvataggio, visibile a schermo
 let statusTimer = null;
 function saveStatus(text) {
   let box = document.getElementById('savestatus');
@@ -114,26 +110,8 @@ function saveStatus(text) {
   if (!err) statusTimer = setTimeout(() => { box.classList.add('is-hidden'); }, 2000);
 }
 
-function saveLogReliable(log) {
-  log.savedAt = new Date().toISOString(); // timestamp con orario
-  // aggiorna subito lo storico in memoria (UI coerente)
-  const i = state.history.findIndex((l) => l.data === log.data);
-  if (i >= 0) state.history[i] = log; else state.history.unshift(log);
-  // programma il salvataggio (breve debounce), ma tienilo pronto per il flush
-  pendingLog = log;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => flushSave(), 250);
-}
-
-// compat: le chiamate esistenti usano queueSaveLog
 function queueSaveLog(log) { saveLogReliable(log); }
-
-// quando l'app va in background o si chiude, forza subito il salvataggio pendente
-function installSaveGuards() {
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave({ beacon: true }); });
-  window.addEventListener('pagehide', () => flushSave({ beacon: true }));
-  window.addEventListener('beforeunload', () => flushSave({ beacon: true }));
-}
+function installSaveGuards() { /* niente flush/beacon: salviamo gia a ogni azione */ }
 
 // applica le proposte selezionate a un piano/log: modifiche (cambia grammatura)
 // e aggiunte (inserisce una nuova riga nel pasto indicato).
