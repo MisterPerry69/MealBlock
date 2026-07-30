@@ -82,7 +82,6 @@ async function loadToday() {
 //      debounce, niente sendBeacon (che verso GAS falliva silenziosamente
 //      dicendo "salvato" senza scrivere). Semplice e affidabile.
 function saveLogReliable(log) {
-  log.savedAt = new Date().toISOString(); // timestamp con orario
   // aggiorna subito lo storico in memoria (UI coerente)
   const i = state.history.findIndex((l) => l.data === log.data);
   if (i >= 0) state.history[i] = log; else state.history.unshift(log);

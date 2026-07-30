@@ -1,65 +1,91 @@
-// store.js — livello dati con interfaccia unica (mock in memoria).
+// gasStore.js — store che parla col backend Google Apps Script.
+// Stessa interfaccia di createMockStore: l'app non sa quale dei due usa.
 //
-// Modello varianti: ON e OFF sono due CATEGORIE; dentro ognuna vivono piu
-// "varianti" (piani), ciascuna con id, nome, categoria, isDefault. La variante
-// default guida la giornata quando parte in automatico.
-//
-// Interfaccia (async):
-//   getFoods() / saveFood(food)
-//   getVariants()                    -> Variant[]  (tutte, ON e OFF)
-//   saveVariant(variant)             -> Variant    (upsert per id)
-//   deleteVariant(id)
-//   getDefaultVariant(categoria)     -> Variant    (la default di ON/OFF)
-//   getSchedule() / saveSchedule()
-//   getLog(dateISO) / saveLog(log)
-//
-// Compatibilita: getTemplate(categoria) resta e ritorna la variante default.
+// Strategia (da design): online-first. Al boot carica tutto con getAll().
+// I log si caricano su richiesta. Le scritture vanno subito al backend.
 
-import { seedFoods, seedTemplates, seedSchedule } from './seed.js';
+export function createGasStore(url) {
+  const TIMEOUT_MS = 15000; // GAS puo essere lento, ma non all'infinito
 
-const clone = (x) => JSON.parse(JSON.stringify(x));
+  async function call(action, payload = {}) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // niente preflight CORS
+        body: JSON.stringify({ action, ...payload }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      throw new Error(ctrl.signal.aborted ? 'Il server non risponde (timeout).' : 'Connessione assente.');
+    } finally {
+      clearTimeout(t);
+    }
+    const out = await res.json();
+    if (!out.ok) throw new Error(out.error || 'errore backend');
+    return out.data;
+  }
 
-// costruisce le varianti iniziali dai due template seed (uno default per categoria)
-function seedVariants() {
-  return [
-    { id: 'on-standard', nome: 'Standard', categoria: 'ON', isDefault: true, ...clone(seedTemplates.ON) },
-    { id: 'off-standard', nome: 'Standard', categoria: 'OFF', isDefault: true, ...clone(seedTemplates.OFF) },
-  ];
-}
+  // Cache del boot: foods/templates/schedule arrivano insieme.
+  let cache = null;
+  async function ensure() {
+    if (!cache) cache = await call('getAll');
+    return cache;
+  }
 
-export function createMockStore(seed = {}) {
-  const foods = clone(seed.foods ?? seedFoods);
-  let variants = clone(seed.variants ?? seedVariants());
-  let schedule = clone(seed.schedule ?? seedSchedule);
-  const logs = clone(seed.logs ?? {});
+  const dvar = (cat) => {
+    const inCat = (cache.variants || []).filter((v) => v.categoria === cat);
+    return inCat.find((v) => v.isDefault) || inCat[0];
+  };
 
   return {
-    async getFoods() { return clone(foods); },
-    async saveFood(food) { foods[food.id] = clone(food); return clone(food); },
+    async getFoods() { return (await ensure()).foods; },
+    async getLogs() { return (await ensure()).logs || []; },
+    async saveFood(food) {
+      const saved = await call('saveFood', { food });
+      if (cache) cache.foods[saved.id] = saved;
+      return saved;
+    },
 
-    async getVariants() { return clone(variants); },
+    async getVariants() { return (await ensure()).variants || []; },
     async saveVariant(v) {
-      const i = variants.findIndex((x) => x.id === v.id);
-      if (i >= 0) variants[i] = clone(v); else variants.push(clone(v));
-      // garantisce una sola default per categoria
-      if (v.isDefault) variants.forEach((x) => { if (x.categoria === v.categoria && x.id !== v.id) x.isDefault = false; });
-      return clone(v);
+      const saved = await call('saveVariant', { variant: v });
+      if (cache) {
+        cache.variants = cache.variants || [];
+        const i = cache.variants.findIndex((x) => x.id === saved.id);
+        if (i >= 0) cache.variants[i] = saved; else cache.variants.push(saved);
+        if (saved.isDefault) cache.variants.forEach((x) => { if (x.categoria === saved.categoria && x.id !== saved.id) x.isDefault = false; });
+      }
+      return saved;
     },
-    async deleteVariant(id) { variants = variants.filter((x) => x.id !== id); },
-
-    async getDefaultVariant(categoria) {
-      const inCat = variants.filter((x) => x.categoria === categoria);
-      return clone(inCat.find((x) => x.isDefault) || inCat[0]);
+    async deleteVariant(id) {
+      await call('deleteVariant', { id });
+      if (cache) cache.variants = (cache.variants || []).filter((x) => x.id !== id);
     },
+    async getDefaultVariant(cat) { await ensure(); return dvar(cat); },
     // compat
-    async getTemplate(categoria) { return this.getDefaultVariant(categoria); },
+    async getTemplate(cat) { await ensure(); return dvar(cat); },
     async saveTemplate(t) { return this.saveVariant(t); },
 
-    async getSchedule() { return clone(schedule); },
-    async saveSchedule(next) { schedule = clone(next); return clone(schedule); },
-
-    async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
-    async saveLog(log) { logs[log.data] = clone(log); return clone(log); },
-    async getLogs() { return Object.values(clone(logs)).sort((a, b) => (a.data < b.data ? 1 : -1)); },
+    async getSchedule() { return (await ensure()).schedule; },
+    async saveSchedule(schedule) {
+      const saved = await call('saveSchedule', { schedule });
+      if (cache) cache.schedule = saved;
+      return saved;
+    },
+    async getLog(dateISO) { return call('getLog', { data: dateISO }); },
+    async saveLog(log) {
+      log.savedAt = new Date().toISOString(); // orario dell'ultimo salvataggio, sempre
+      const saved = await call('saveLog', { log });
+      // mantieni la cache logs coerente (per lo storico senza ricaricare)
+      if (cache) {
+        cache.logs = cache.logs || [];
+        const i = cache.logs.findIndex((l) => l.data === log.data);
+        if (i >= 0) cache.logs[i] = log; else cache.logs.unshift(log);
+      }
+      return saved;
+    },
   };
 }

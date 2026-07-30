@@ -77,6 +77,7 @@ export function createGasStore(url) {
     },
     async getLog(dateISO) { return call('getLog', { data: dateISO }); },
     async saveLog(log) {
+      log.savedAt = new Date().toISOString(); // orario dell'ultimo salvataggio, sempre
       const saved = await call('saveLog', { log });
       // mantieni la cache logs coerente (per lo storico senza ricaricare)
       if (cache) {
