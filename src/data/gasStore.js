@@ -4,6 +4,18 @@
 // Strategia (da design): online-first. Al boot carica tutto con getAll().
 // I log si caricano su richiesta. Le scritture vanno subito al backend.
 
+// orario LOCALE leggibile 'YYYY-MM-DD HH:MM' (non UTC come toISOString)
+export function localStamp() {
+  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ritorna il log con savedAt come PRIMA chiave (comodo per leggerlo dal DB)
+export function stampFirst(log) {
+  const { savedAt, ...rest } = log; // rimuove un eventuale savedAt vecchio
+  return { savedAt: localStamp(), ...rest };
+}
+
 export function createGasStore(url) {
   const TIMEOUT_MS = 15000; // GAS puo essere lento, ma non all'infinito
 
@@ -77,13 +89,12 @@ export function createGasStore(url) {
     },
     async getLog(dateISO) { return call('getLog', { data: dateISO }); },
     async saveLog(log) {
-      log.savedAt = new Date().toISOString(); // orario dell'ultimo salvataggio, sempre
-      const saved = await call('saveLog', { log });
-      // mantieni la cache logs coerente (per lo storico senza ricaricare)
+      const stamped = stampFirst(log); // savedAt in cima, orario locale
+      const saved = await call('saveLog', { log: stamped });
       if (cache) {
         cache.logs = cache.logs || [];
-        const i = cache.logs.findIndex((l) => l.data === log.data);
-        if (i >= 0) cache.logs[i] = log; else cache.logs.unshift(log);
+        const i = cache.logs.findIndex((l) => l.data === stamped.data);
+        if (i >= 0) cache.logs[i] = stamped; else cache.logs.unshift(stamped);
       }
       return saved;
     },

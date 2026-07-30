@@ -16,6 +16,7 @@
 // Compatibilita: getTemplate(categoria) resta e ritorna la variante default.
 
 import { seedFoods, seedTemplates, seedSchedule } from './seed.js';
+import { stampFirst } from './gasStore.js';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
@@ -59,7 +60,7 @@ export function createMockStore(seed = {}) {
     async saveSchedule(next) { schedule = clone(next); return clone(schedule); },
 
     async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
-    async saveLog(log) { log.savedAt = new Date().toISOString(); logs[log.data] = clone(log); return clone(log); },
+    async saveLog(log) { const s = stampFirst(log); logs[s.data] = clone(s); return clone(s); },
     async getLogs() { return Object.values(clone(logs)).sort((a, b) => (a.data < b.data ? 1 : -1)); },
   };
 }

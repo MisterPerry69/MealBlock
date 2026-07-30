@@ -67,6 +67,12 @@ export function openFoodForm({ food, onSave }) {
       rangeGrid.append(rmin.wrap, rmax.wrap);
       const rangeHint = el('div', { class: 'f-hint', text: 'Limiti di grammatura per il ricalcolo automatico. Lascia vuoto per nessun limite.' });
 
+      // flag accessorio: il ricalcolo riduce prima questi (bevande, integratori...)
+      const accChk = el('button', {
+        class: 'acc-toggle', type: 'button', 'aria-pressed': String(!!food?.accessorio),
+        onClick: () => accChk.setAttribute('aria-pressed', accChk.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'),
+      }, [ el('span', { class: 'acc-box', html: icon.check(13) }), 'Accessorio (bevanda, integratore…) — ridotto per primo nel ricalcolo' ]);
+
       const save = el('button', { class: 'modal-btn modal-btn--primary', text: 'Salva' , onClick: () => {
         const nomeV = nome.input.value.trim();
         if (!nomeV) { nome.input.focus(); return; }
@@ -82,11 +88,12 @@ export function openFoodForm({ food, onSave }) {
         const minV = rmin.input.value !== '' ? num(rmin.input.value) : null;
         const maxV = rmax.input.value !== '' ? num(rmax.input.value) : null;
         if (minV != null && maxV != null) out.rangeGrammatura = { min: minV, max: maxV };
+        if (accChk.getAttribute('aria-pressed') === 'true') out.accessorio = true;
         onSave(out);
         close();
       }});
 
-      return el('div', {}, [nome.wrap, grid, rangeGrid, rangeHint, el('div', { class: 'modal-actions' }, [save])]);
+      return el('div', {}, [nome.wrap, grid, rangeGrid, rangeHint, accChk, el('div', { class: 'modal-actions' }, [save])]);
     },
   });
 }
@@ -95,7 +102,7 @@ export function openFoodForm({ food, onSave }) {
  * Form "fuori piano": scegli un cibo esistente o creane uno al volo, poi i grammi.
  * onConfirm riceve { foodId, grammatura } (creando il cibo se nuovo via onCreateFood).
  */
-export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiungi cibo', preId = null }) {
+export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiungi cibo', preId = null, suggestGram = null }) {
   return openModal({
     title,
     build(close) {
@@ -113,7 +120,13 @@ export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiun
           const p = f.per100g;
           const item = el('button', {
             class: `food-opt ${f.id === selectedId ? 'is-sel' : ''}`,
-            onClick: () => { selectedId = f.id; renderResults(); gram.input.focus(); },
+            onClick: () => {
+              selectedId = f.id;
+              // precompila la grammatura tipica di questo cibo (se conosciuta)
+              const g = suggestGram && suggestGram(f.id);
+              if (g && !gram.input.value) gram.input.value = String(g);
+              renderResults(); gram.input.focus();
+            },
           }, [
             el('span', { class: 'food-opt__name', text: f.nome }),
             el('span', { class: 'food-opt__macros' }, [

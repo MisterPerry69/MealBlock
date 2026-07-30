@@ -9,6 +9,7 @@ import { GAS_URL } from '../data/config.js';
 import { seedFoods, seedTemplates, seedSchedule } from '../data/seed.js';
 import { buildLog, weekdayKey, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
 import { optimizePlan } from '../core/optimize.js';
+import { computeUsage, suggestGrams, rankFoodsForMeal } from '../core/usage.js';
 import { flatFoods } from './format.js';
 import { renderOggi } from './screens/oggi.js';
 import { renderPiani } from './screens/piani.js';
@@ -112,6 +113,27 @@ function saveStatus(text) {
 function queueSaveLog(log) { saveLogReliable(log); }
 function installSaveGuards() { /* niente flush/beacon: salviamo gia a ogni azione */ }
 
+// statistiche d'uso calcolate dallo storico (per suggerimenti cibo/grammatura)
+function currentUsage() { return computeUsage(state.history || []); }
+
+// apre il picker cibo con suggerimenti: cibi del pasto in cima + grammatura
+// precompilata in base all'uso passato.
+function openSmartPicker({ mealId, onConfirm }) {
+  const usage = currentUsage();
+  const ordered = rankFoodsForMeal(Object.values(state.foods), usage, mealId);
+  const foodsOrdered = {};
+  for (const f of ordered) foodsOrdered[f.id] = f;
+  openSgarroForm({
+    foods: foodsOrdered,
+    suggestGram: (foodId) => suggestGrams(usage, foodId, mealId),
+    onCreateFood: (data) => {
+      const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
+      state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
+    },
+    onConfirm,
+  });
+}
+
 // applica le proposte selezionate a un piano/log: modifiche (cambia grammatura)
 // e aggiunte (inserisce una nuova riga nel pasto indicato).
 function applyProposals(planOrLog, selected) {
@@ -199,10 +221,11 @@ const ctx = {
   recalcNow() {
     const { log, template } = state.today;
     if (isSgarroDay(log)) return; // SGARRO: nessun target rigido
-    // le righe con stato 'bloccata' (spuntate/bloccate) sono locked per il motore
+    // cio che ho gia MANGIATO (eaten) o bloccato e intoccabile: non ha senso
+    // proporre di cambiarne la grammatura.
     const plan = {
       target: template.target,
-      meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.stato === 'bloccata' })) })),
+      meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.eaten || r.stato === 'bloccata' })) })),
     };
     const proposals = buildProposals(plan, state.foods);
     openProposals({
@@ -225,17 +248,10 @@ const ctx = {
   },
 
   addSgarro() {
-    openSgarroForm({
-      foods: state.foods,
-      onCreateFood: (data) => {
-        // creazione sincrona in memoria; persistenza in background
-        const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-        state.foods[id] = { id, ...data };
-        store.saveFood(state.foods[id]);
-        return id;
-      },
-      onConfirm: async ({ foodId, grammatura }) => {
-        const meal = state.today.log.meals[state.today.log.meals.length - 1];
+    const meal = state.today.log.meals[state.today.log.meals.length - 1];
+    openSmartPicker({
+      mealId: meal.id,
+      onConfirm: ({ foodId, grammatura }) => {
         meal.righe.push({ foodId, grammatura, stato: 'bloccata', isSgarro: true, eaten: true });
         persistToday();
       },
@@ -300,13 +316,9 @@ const ctx = {
 
   // sostituisci il cibo di una riga scegliendone un altro dal repertorio
   replaceFood(mealId, rowIndex) {
-    openSgarroForm({
-      foods: state.foods,
-      onCreateFood: (data) => {
-        const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-        state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
-      },
-      onConfirm: async ({ foodId, grammatura }) => {
+    openSmartPicker({
+      mealId,
+      onConfirm: ({ foodId, grammatura }) => {
         const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
         row.foodId = foodId; row.grammatura = grammatura;
         persistToday();
@@ -317,7 +329,9 @@ const ctx = {
   setRowGram(mealId, rowIndex, grammi) {
     const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
     row.grammatura = Math.max(0, grammi || 0);
-    render();
+    // NON fare render() qui: ricostruirebbe gli input e chiuderebbe la tastiera
+    // mentre passi da un campo all'altro. Salviamo e basta; i totali si
+    // aggiornano alla prossima azione o uscendo dalla modifica.
     queueSaveLog(state.today.log);
   },
 
@@ -335,13 +349,9 @@ const ctx = {
   },
 
   addRowToMeal(mealId) {
-    openSgarroForm({
-      foods: state.foods,
-      onCreateFood: (data) => {
-        const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-        state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
-      },
-      onConfirm: async ({ foodId, grammatura }) => {
+    openSmartPicker({
+      mealId,
+      onConfirm: ({ foodId, grammatura }) => {
         state.today.log.meals.find((m) => m.id === mealId).righe.push(
           { foodId, grammatura, stato: 'aperta', isSgarro: false, eaten: false });
         persistToday();
@@ -364,7 +374,7 @@ const ctx = {
   bancoSetGram(mealId, index, grammi) {
     const meal = state.banco.plan.meals.find((m) => m.id === mealId);
     meal.righe[index].grammatura = Math.max(0, grammi || 0);
-    render();
+    // niente render(): eviti di chiudere la tastiera passando tra i campi
   },
 
   bancoToggleLock(mealId, index) {
@@ -381,12 +391,8 @@ const ctx = {
   },
 
   bancoAddFood(mealId) {
-    openSgarroForm({
-      foods: state.foods,
-      onCreateFood: (data) => {
-        const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-        state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
-      },
+    openSmartPicker({
+      mealId,
       onConfirm: ({ foodId, grammatura }) => {
         const meal = state.banco.plan.meals.find((m) => m.id === mealId);
         meal.righe.push({ foodId, grammatura });
