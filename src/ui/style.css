@@ -403,4 +403,16 @@ select.f__input { appearance: none; }
 .daymenu__i.is-muted svg { opacity: 0; }
 .daymenu__i.is-danger svg { color: var(--p); }
 
+/* indicatore stato salvataggio */
+.savestatus {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  top: calc(10px + env(safe-area-inset-top)); z-index: 200;
+  padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  box-shadow: 0 6px 18px rgba(47,58,52,.18); transition: opacity .25s;
+}
+.savestatus.is-hidden { opacity: 0; pointer-events: none; }
+.savestatus.is-ok { background: var(--sage); color: #fff; }
+.savestatus.is-wait { background: var(--card); color: var(--dim); }
+.savestatus.is-err { background: #c0392b; color: #fff; max-width: 90vw; }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

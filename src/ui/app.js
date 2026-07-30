@@ -90,18 +90,39 @@ function flushSave({ beacon = false } = {}) {
   pendingLog = null;
   clearTimeout(saveTimer); saveTimer = null;
   // se l'app sta chiudendo/andando in background, usa sendBeacon (non interrotto)
-  if (beacon && store.saveLogBeacon && store.saveLogBeacon(log)) return;
-  store.saveLog(log).catch((e) => console.warn('saveLog fallito', e));
+  if (beacon && store.saveLogBeacon && store.saveLogBeacon(log)) { saveStatus('salvato'); return; }
+  saveStatus('salvo…');
+  store.saveLog(log)
+    .then(() => saveStatus('salvato'))
+    .catch((e) => saveStatus('errore: ' + (e && e.message ? e.message : e)));
+}
+
+// indicatore di stato salvataggio, visibile a schermo (per capire se/perche fallisce)
+let statusTimer = null;
+function saveStatus(text) {
+  let box = document.getElementById('savestatus');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'savestatus';
+    box.className = 'savestatus';
+    document.body.appendChild(box);
+  }
+  const err = text.startsWith('errore');
+  box.textContent = err ? '⚠ ' + text : (text === 'salvato' ? '✓ salvato' : text);
+  box.className = 'savestatus ' + (err ? 'is-err' : (text === 'salvato' ? 'is-ok' : 'is-wait'));
+  clearTimeout(statusTimer);
+  if (!err) statusTimer = setTimeout(() => { box.classList.add('is-hidden'); }, 2000);
 }
 
 function saveLogReliable(log) {
+  log.savedAt = new Date().toISOString(); // timestamp con orario
   // aggiorna subito lo storico in memoria (UI coerente)
   const i = state.history.findIndex((l) => l.data === log.data);
   if (i >= 0) state.history[i] = log; else state.history.unshift(log);
   // programma il salvataggio (breve debounce), ma tienilo pronto per il flush
   pendingLog = log;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(flushSave, 250);
+  saveTimer = setTimeout(() => flushSave(), 250);
 }
 
 // compat: le chiamate esistenti usano queueSaveLog
@@ -209,10 +230,10 @@ const ctx = {
     const proposals = buildProposals(plan, state.foods);
     openProposals({
       proposals, foods: state.foods,
-      onApply: async (selected) => {
+      onApply: (selected) => {
         applyProposals(state.today.log, selected);
-        await store.saveLog(state.today.log);
         render();
+        queueSaveLog(state.today.log);
       },
     });
   },
