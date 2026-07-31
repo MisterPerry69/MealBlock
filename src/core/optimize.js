@@ -29,9 +29,17 @@ function macrosOf(rows, foods) {
   return t;
 }
 
+// range in cui il motore puo muovere la grammatura di un cibo:
+// - se il cibo ha un range esplicito (min/max dal DB) si usa QUELLO (e se
+//   min==max il cibo e di fatto FISSO: la pizza 390/390 non viene toccata);
+// - altrimenti default ASIMMETRICO: in AUMENTO al massimo +30% (niente
+//   esplosioni tipo 800g di pizza), in RIDUZIONE fino a 0 (puoi sempre togliere
+//   piu di quanto aggiungi, per correggere un eccesso).
+const DEFAULT_UP_PCT = 0.30;
 function rangeOf(food, g0) {
   if (food && food.rangeGrammatura) return [food.rangeGrammatura.min, food.rangeGrammatura.max];
-  return [0, Math.max(300, Math.round((g0 || 0) * 3))];
+  const g = g0 || 0;
+  return [0, Math.round(g * (1 + DEFAULT_UP_PCT))];
 }
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
