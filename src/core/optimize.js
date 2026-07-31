@@ -8,10 +8,16 @@
 // ridurre LA BEVANDA, non di limare 12 cibi di 1-2g.
 
 const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
-// fascia OK: dentro questa, il macro e "a posto" e non si tocca
-const BAND = { kcal: 50, carbo: 5, prot: 5, fat: 5 };
-const MIN_MOVE = 3;       // ignora modifiche piu piccole di 3g (inutili)
-const MAX_MOVES = 4;      // al massimo poche mosse
+// Ottimizziamo solo C/P/F: le kcal sono la CONSEGUENZA, non un macro da
+// inseguire (inseguirle portava ad aumentare cibi calorici a caso). Le kcal
+// fanno solo da TETTO (non sforare troppo).
+const NUTRI = ['prot', 'carbo', 'fat'];
+const BAND = { carbo: 8, prot: 5, fat: 5 };
+const KCAL_BAND = 120;    // tolleranza sulle kcal totali (tetto)
+// peso di priorita: le proteine contano di piu
+const PRIORITY = { prot: 3, fat: 1.2, carbo: 1 };
+const MIN_MOVE = 3;
+const MAX_MOVES = 5;
 
 function macrosOf(rows, foods) {
   const t = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
@@ -29,13 +35,16 @@ function rangeOf(food, g0) {
 }
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-// macro peggiore fuori fascia (per gravita relativa alla banda)
+// il macro NUTRITIVO (C/P/F) piu fuori fascia, pesato per priorita (proteine
+// prima). Le kcal NON entrano qui.
 function worstMacro(tot, target) {
-  let worst = null, worstOver = 0;
-  for (const m of MACROS) {
+  let worst = null, worstScore = 0;
+  for (const m of NUTRI) {
     const d = tot[m] - target[m];              // >0 eccesso, <0 deficit
     const over = Math.abs(d) - BAND[m];        // quanto sfora la fascia
-    if (over > 0 && over > worstOver) { worstOver = over; worst = { macro: m, diff: d }; }
+    if (over <= 0) continue;
+    const score = over * (PRIORITY[m] || 1);
+    if (score > worstScore) { worstScore = score; worst = { macro: m, diff: d }; }
   }
   return worst;
 }
@@ -109,12 +118,21 @@ export function optimizePlan(plan, foods, opts = {}) {
         if (c.r.grammatura - next >= MIN_MOVE) { c.r.grammatura = next; acted = true; break; }
       }
     } else {
-      // DEFICIT: aumenta il piu efficiente (max macro per kcal) gia nel piano
+      // DEFICIT: aumenta il cibo piu EFFICIENTE per questo macro (max macro/kcal),
+      // cosi copri il deficit portando meno kcal possibile. E non far sforare le
+      // kcal totali oltre il tetto (target + KCAL_BAND).
+      const kcalRoom = (target.kcal + KCAL_BAND) - tot.kcal; // kcal ancora disponibili
       cands.sort((a, b) => (b.food[macro] / b.food.kcal) - (a.food[macro] / a.food.kcal));
       for (const c of cands) {
         const perG = c.food[macro] / 100;
+        const kcalPerG = (c.food.kcal || 0) / 100;
         const [lo, hi] = rangeOf(c.food, g0map.get(c.r));
-        const want = c.r.grammatura + (-diff) / perG;
+        let want = c.r.grammatura + (-diff) / perG;
+        // limita l'aumento a quanto le kcal residue permettono
+        if (kcalPerG > 0 && kcalRoom > 0) {
+          const maxAddByKcal = kcalRoom / kcalPerG;
+          want = Math.min(want, c.r.grammatura + maxAddByKcal);
+        }
         const next = clamp(Math.round(want), c.r.grammatura, hi); // solo aumenti
         if (next - c.r.grammatura >= MIN_MOVE) { c.r.grammatura = next; acted = true; break; }
       }
@@ -129,10 +147,14 @@ export function optimizePlan(plan, foods, opts = {}) {
           .sort((a, b) => (b[macro] / b.kcal) - (a[macro] / a.kcal))[0];
         if (best) {
           const perG = best[macro] / 100;
-          // tetto = max del range se definito, altrimenti un default prudente (100g)
+          const kcalPerG = (best.kcal || 0) / 100;
           const hi = best.rangeGrammatura ? best.rangeGrammatura.max : 100;
           const lo = best.rangeGrammatura ? best.rangeGrammatura.min : 0;
-          const g = clamp(Math.round((-diff) / perG), Math.max(lo, 5), hi);
+          let want = (-diff) / perG;
+          // non sforare le kcal totali oltre il tetto
+          const kcalRoom = (target.kcal + KCAL_BAND) - tot.kcal;
+          if (kcalPerG > 0 && kcalRoom > 0) want = Math.min(want, kcalRoom / kcalPerG);
+          const g = clamp(Math.round(want), Math.max(lo, 5), hi);
           if (g >= 5) { additions.push({ mealId: lastMeal, foodId: best.id, grammatura: g }); inPlan.add(best.id); acted = true; }
         }
       }
