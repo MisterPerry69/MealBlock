@@ -85,9 +85,13 @@ export function openFoodForm({ food, onSave }) {
             fat: num(fat.input.value),
           },
         };
+        // salva il range se c'e ALMENO uno dei due (min o max). L'altro prende
+        // un default sensato: min=0, max=nessun limite (999999).
         const minV = rmin.input.value !== '' ? num(rmin.input.value) : null;
         const maxV = rmax.input.value !== '' ? num(rmax.input.value) : null;
-        if (minV != null && maxV != null) out.rangeGrammatura = { min: minV, max: maxV };
+        if (minV != null || maxV != null) {
+          out.rangeGrammatura = { min: minV != null ? minV : 0, max: maxV != null ? maxV : 999999 };
+        }
         if (accChk.getAttribute('aria-pressed') === 'true') out.accessorio = true;
         onSave(out);
         close();

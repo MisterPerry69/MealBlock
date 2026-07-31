@@ -10,7 +10,7 @@ import { seedFoods, seedTemplates, seedSchedule } from '../data/seed.js';
 import { buildLog, weekdayKey, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
 import { optimizePlan } from '../core/optimize.js';
 import { computeUsage, suggestGrams, rankFoodsForMeal } from '../core/usage.js';
-import { flatFoods } from './format.js';
+import { flatFoods, logMacros, eatenMacros } from './format.js';
 import { renderOggi } from './screens/oggi.js';
 import { renderPiani } from './screens/piani.js';
 import { renderBanco } from './screens/banco.js';
@@ -19,9 +19,9 @@ import { renderStorico } from './screens/storico.js';
 import { openFoodForm, openSgarroForm, openRenameForm, openProposals } from './modal.js';
 
 // converte l'output dell'ottimizzatore in proposte per il modal (modifiche + aggiunte)
-function buildProposals(plan, foods) {
+function buildProposals(plan, foods, usage) {
   const flat = flatFoods(foods);
-  const { changes, additions } = optimizePlan(plan, flat);
+  const { changes, additions } = optimizePlan(plan, flat, { usage });
   const proposals = [];
   for (const c of changes) proposals.push({ id: c.mealId + ':' + c.foodId, tipo: 'modifica', mealId: c.mealId, foodId: c.foodId, daG: c.daG, aG: c.aG });
   for (const a of additions) proposals.push({ id: 'add:' + a.mealId + ':' + a.foodId, tipo: 'aggiunta', mealId: a.mealId, foodId: a.foodId, daG: 0, aG: a.grammatura });
@@ -158,6 +158,15 @@ function persistToday() {
   queueSaveLog(state.today.log);
 }
 
+// aggiorna SOLO il tracker di Oggi (senza ricostruire la lista/gli input): usato
+// mentre si digita una grammatura in modifica, per non chiudere la tastiera.
+function refreshTrackerToday() {
+  const { log, foods, template } = state.today;
+  if (isSgarroDay(log)) return;
+  const shown = state.editMode ? logMacros(log, foods) : eatenMacros(log, foods);
+  renderTracker(shown, template.target);
+}
+
 // ---- azioni passate alle schermate via ctx ----
 const ctx = {
   get foods() { return state.foods; },
@@ -227,7 +236,7 @@ const ctx = {
       target: template.target,
       meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.eaten || r.stato === 'bloccata' })) })),
     };
-    const proposals = buildProposals(plan, state.foods);
+    const proposals = buildProposals(plan, state.foods, currentUsage());
     openProposals({
       proposals, foods: state.foods,
       onApply: (selected) => {
@@ -329,9 +338,9 @@ const ctx = {
   setRowGram(mealId, rowIndex, grammi) {
     const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
     row.grammatura = Math.max(0, grammi || 0);
-    // NON fare render() qui: ricostruirebbe gli input e chiuderebbe la tastiera
-    // mentre passi da un campo all'altro. Salviamo e basta; i totali si
-    // aggiornano alla prossima azione o uscendo dalla modifica.
+    // NON fare render() completo (chiuderebbe la tastiera). Aggiorno SOLO il
+    // tracker cosi i macro si muovono in tempo reale mentre digiti.
+    refreshTrackerToday();
     queueSaveLog(state.today.log);
   },
 
@@ -403,7 +412,7 @@ const ctx = {
 
   // Ricalcola = PROPONE modifiche/aggiunte spuntabili (ottimizzatore multi-macro).
   bancoAuto() {
-    const proposals = buildProposals(state.banco.plan, state.foods);
+    const proposals = buildProposals(state.banco.plan, state.foods, currentUsage());
     openProposals({
       proposals, foods: state.foods,
       onApply: (selected) => { applyProposals(state.banco.plan, selected); render(); },

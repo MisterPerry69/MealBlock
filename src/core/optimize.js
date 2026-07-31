@@ -1,17 +1,17 @@
-// optimize.js — ottimizzatore multi-macro (v4).
+// optimize.js — motore "a mosse mirate" (v5).
 //
-// A differenza del vecchio motore (che ragionava per "macro dominante" e copriva
-// solo i deficit), questo considera la COMPOSIZIONE COMPLETA di ogni alimento e
-// avvicina TUTTI i macro insieme, gestendo sia deficit sia ECCESSI (riduce i
-// cibi se sfori). Ottimizzazione a coordinate su errore pesato.
+// Filosofia: minimo intervento. Se sei gia in fascia, non tocca niente. Se un
+// macro e fuori, colpisce il CIBO PIU RESPONSABILE di quello scarto (non sparge
+// micro-modifiche su tutti). Poche mosse, grosse abbastanza da contare.
 //
-// Poi, se resta scarto positivo (deficit), PROPONE aggiunte dal repertorio
-// scegliendo il cibo che riduce di piu l'errore totale, sempre entro range.
+// Esempio reale: proteine +18 causate dalla bevanda proteica -> propone di
+// ridurre LA BEVANDA, non di limare 12 cibi di 1-2g.
 
 const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
-
-// pesi dell'errore: kcal normalizzata (scala grande), proteine prioritarie
-const W = { kcal: 1 / 100, carbo: 1, prot: 2, fat: 1 };
+// fascia OK: dentro questa, il macro e "a posto" e non si tocca
+const BAND = { kcal: 50, carbo: 5, prot: 5, fat: 5 };
+const MIN_MOVE = 3;       // ignora modifiche piu piccole di 3g (inutili)
+const MAX_MOVES = 4;      // al massimo poche mosse
 
 function macrosOf(rows, foods) {
   const t = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
@@ -23,111 +23,137 @@ function macrosOf(rows, foods) {
   return t;
 }
 
-function weightedError(tot, target) {
-  let e = 0;
-  for (const m of MACROS) { const d = tot[m] - target[m]; e += W[m] * d * d; }
-  return e;
-}
-
 function rangeOf(food, g0) {
   if (food && food.rangeGrammatura) return [food.rangeGrammatura.min, food.rangeGrammatura.max];
   return [0, Math.max(300, Math.round((g0 || 0) * 3))];
 }
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
+// macro peggiore fuori fascia (per gravita relativa alla banda)
+function worstMacro(tot, target) {
+  let worst = null, worstOver = 0;
+  for (const m of MACROS) {
+    const d = tot[m] - target[m];              // >0 eccesso, <0 deficit
+    const over = Math.abs(d) - BAND[m];        // quanto sfora la fascia
+    if (over > 0 && over > worstOver) { worstOver = over; worst = { macro: m, diff: d }; }
+  }
+  return worst;
+}
+
 /**
- * Ottimizza le grammature dei cibi sbloccati per avvicinare tutti i macro al
- * target, poi propone aggiunte per lo scarto residuo.
- * @returns {{ meals, changes, additions, totalsIfApplied, residual }}
+ * @param {object} opts { usage } statistiche d'uso: le aggiunte pescano SOLO dai
+ *        cibi noti per il pasto in deficit (niente scelte a caso tipo bevanda a
+ *        cena). Se usage manca, nessuna aggiunta automatica.
+ * @returns {{ meals, changes, additions, totalsIfApplied, residual, inBand }}
  */
-export function optimizePlan(plan, foods) {
+export function optimizePlan(plan, foods, opts = {}) {
+  const usage = opts.usage || null;
   const meals = plan.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r })) }));
   const target = plan.target;
 
-  // indice piatto dei cibi sbloccati (quelli ottimizzabili)
-  const open = [];
-  for (const meal of meals) for (const r of meal.righe) {
-    if (!r.locked) open.push({ meal, r, g0: r.grammatura, food: foods[r.foodId] });
-  }
+  // cibi "noti" per un pasto (dallo storico d'uso), ordinati per frequenza
+  const knownForMeal = (mealId) => {
+    if (!usage) return [];
+    return Object.keys(usage)
+      .filter((fid) => usage[fid].perMeal && usage[fid].perMeal[mealId] && usage[fid].perMeal[mealId].count > 0)
+      .sort((a, b) => usage[b].perMeal[mealId].count - usage[a].perMeal[mealId].count);
+  };
+  const g0map = new Map(); // grammature iniziali per il diff
+  for (const meal of meals) for (const r of meal.righe) g0map.set(r, r.grammatura);
 
-  const allRows = (extra = []) => {
-    const rows = [];
-    for (const meal of meals) for (const r of meal.righe) rows.push({ foodId: r.foodId, grammatura: r.grammatura });
-    return rows.concat(extra);
+  const openRows = () => {
+    const out = [];
+    for (const meal of meals) for (const r of meal.righe) if (!r.locked) out.push({ meal, r });
+    return out;
+  };
+  const rowsFlat = (extra = []) => {
+    const out = [];
+    for (const meal of meals) for (const r of meal.righe) out.push({ foodId: r.foodId, grammatura: r.grammatura });
+    return out.concat(extra);
   };
 
-  // --- ottimizzazione a coordinate ---
-  for (let iter = 0; iter < 60; iter++) {
-    let improved = false;
-    for (const item of open) {
-      if (!item.food) continue;
-      const [lo, hi] = rangeOf(item.food, item.g0);
-      // errore in funzione della grammatura di questo cibo = parabola: minimo in forma chiusa
-      // tot(g) = others + food*g/100 ; err = sum W*(others_m + c_m*g - t_m)^2, c_m = food_m/100
-      const others = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
-      for (const meal of meals) for (const r of meal.righe) {
-        if (r === item.r) continue;
-        const f = foods[r.foodId]; if (!f) continue;
-        const k = r.grammatura / 100;
-        for (const m of MACROS) others[m] += (f[m] || 0) * k;
-      }
-      let num = 0, den = 0;
-      for (const m of MACROS) {
-        const c = (item.food[m] || 0) / 100;
-        num += W[m] * c * (target[m] - others[m]);
-        den += W[m] * c * c;
-      }
-      const best = den === 0 ? item.r.grammatura : clamp(num / den, lo, hi);
-      if (Math.abs(best - item.r.grammatura) > 0.5) { item.r.grammatura = best; improved = true; }
-    }
-    if (!improved) break;
-  }
-  for (const item of open) item.r.grammatura = Math.round(item.r.grammatura);
-
-  // --- aggiunte per lo scarto residuo (solo deficit) ---
   const additions = [];
   const inPlan = new Set();
   for (const meal of meals) for (const r of meal.righe) inPlan.add(r.foodId);
   const lastMeal = meals[meals.length - 1].id;
 
-  for (let step = 0; step < 5; step++) {
-    const tot = macrosOf(allRows(additions), foods);
-    const curErr = weightedError(tot, target);
-    // se siamo gia vicini, stop
-    const deficit = MACROS.some((m) => target[m] - tot[m] > (m === 'kcal' ? 60 : 8));
-    if (!deficit) break;
+  let moves = 0;
+  while (moves < MAX_MOVES) {
+    const tot = macrosOf(rowsFlat(additions), foods);
+    const w = worstMacro(tot, target);
+    if (!w) break; // tutto in fascia
+    const { macro, diff } = w; // diff>0 eccesso -> ridurre; diff<0 deficit -> aumentare
 
-    // scegli il cibo (non gia nel piano) che, aggiunto alla sua grammatura ottima,
-    // riduce di piu l'errore totale
-    let bestPick = null;
-    for (const f of Object.values(foods)) {
-      if (inPlan.has(f.id)) continue;
-      const [lo, hi] = rangeOf(f, 0);
-      // grammatura ottima di f dato lo stato attuale
-      let num = 0, den = 0;
-      for (const m of MACROS) { const c = (f[m] || 0) / 100; num += W[m] * c * (target[m] - tot[m]); den += W[m] * c * c; }
-      if (den === 0) continue;
-      const g = clamp(Math.round(num / den), lo, hi);
-      if (g < 5) continue;
-      const newErr = weightedError(macrosOf(allRows(additions.concat([{ foodId: f.id, grammatura: g }])), foods), target);
-      if (newErr < curErr && (!bestPick || newErr < bestPick.newErr)) bestPick = { foodId: f.id, g, newErr };
+    // candidati sbloccati che contengono questo macro
+    const cands = openRows()
+      .map(({ meal, r }) => ({ meal, r, food: foods[r.foodId] }))
+      .filter(({ food }) => food && (food[macro] || 0) > 0);
+
+    // il PIU RESPONSABILE: max contributo assoluto a questo macro (g_macro nel piatto)
+    // per un eccesso vogliamo ridurre chi contribuisce di piu; per un deficit
+    // aumentare chi e piu "efficiente" (denso nel macro).
+    let acted = false;
+    if (diff > 0) {
+      // ECCESSO: riduci prima i cibi ACCESSORI (bevande/integratori), poi tra
+      // questi il maggior contributore. I cibi principali si toccano solo se
+      // non bastano gli accessori.
+      cands.sort((a, b) => {
+        if (!!b.food.accessorio !== !!a.food.accessorio) return (b.food.accessorio ? 1 : 0) - (a.food.accessorio ? 1 : 0);
+        return (b.food[macro] * b.r.grammatura) - (a.food[macro] * a.r.grammatura);
+      });
+      for (const c of cands) {
+        const perG = c.food[macro] / 100;
+        const [lo, hi] = rangeOf(c.food, g0map.get(c.r));
+        const want = c.r.grammatura - diff / perG;      // quanto togliere per azzerare lo scarto
+        const next = clamp(Math.round(want), lo, c.r.grammatura); // solo riduzioni
+        if (c.r.grammatura - next >= MIN_MOVE) { c.r.grammatura = next; acted = true; break; }
+      }
+    } else {
+      // DEFICIT: aumenta il piu efficiente (max macro per kcal) gia nel piano
+      cands.sort((a, b) => (b.food[macro] / b.food.kcal) - (a.food[macro] / a.food.kcal));
+      for (const c of cands) {
+        const perG = c.food[macro] / 100;
+        const [lo, hi] = rangeOf(c.food, g0map.get(c.r));
+        const want = c.r.grammatura + (-diff) / perG;
+        const next = clamp(Math.round(want), c.r.grammatura, hi); // solo aumenti
+        if (next - c.r.grammatura >= MIN_MOVE) { c.r.grammatura = next; acted = true; break; }
+      }
+      // se nessun cibo presente puo coprire il deficit, proponi un'AGGIUNTA
+      // pescando SOLO dai cibi noti per l'ultimo pasto (dallo storico d'uso):
+      // niente scelte a caso. Rispetta sempre il range max reale del cibo.
+      if (!acted) {
+        const noti = knownForMeal(lastMeal);
+        const best = noti
+          .map((fid) => foods[fid])
+          .filter((f) => f && !inPlan.has(f.id) && (f[macro] || 0) > 0)
+          .sort((a, b) => (b[macro] / b.kcal) - (a[macro] / a.kcal))[0];
+        if (best) {
+          const perG = best[macro] / 100;
+          // tetto = max del range se definito, altrimenti un default prudente (100g)
+          const hi = best.rangeGrammatura ? best.rangeGrammatura.max : 100;
+          const lo = best.rangeGrammatura ? best.rangeGrammatura.min : 0;
+          const g = clamp(Math.round((-diff) / perG), Math.max(lo, 5), hi);
+          if (g >= 5) { additions.push({ mealId: lastMeal, foodId: best.id, grammatura: g }); inPlan.add(best.id); acted = true; }
+        }
+      }
     }
-    if (!bestPick) break;
-    additions.push({ foodId: bestPick.foodId, grammatura: bestPick.g, mealId: lastMeal });
-    inPlan.add(bestPick.foodId);
+    if (!acted) break; // non riesco a migliorare questo macro senza sforare i range
+    moves++;
   }
 
-  // --- diff delle modifiche ---
+  // diff
   const changes = [];
-  for (const item of open) {
-    if (Math.round(item.r.grammatura) !== Math.round(item.g0)) {
-      changes.push({ mealId: item.meal.id, foodId: item.r.foodId, daG: Math.round(item.g0), aG: Math.round(item.r.grammatura) });
+  for (const meal of meals) for (const r of meal.righe) {
+    const g0 = g0map.get(r);
+    if (Math.round(r.grammatura) !== Math.round(g0)) {
+      changes.push({ mealId: meal.id, foodId: r.foodId, daG: Math.round(g0), aG: Math.round(r.grammatura) });
     }
   }
 
-  const totalsIfApplied = macrosOf(allRows(additions), foods);
+  const totalsIfApplied = macrosOf(rowsFlat(additions), foods);
   const residual = {};
   for (const m of MACROS) residual[m] = target[m] - totalsIfApplied[m];
+  const inBand = !worstMacro(totalsIfApplied, target);
 
-  return { meals, changes, additions, totalsIfApplied, residual };
+  return { meals, changes, additions, totalsIfApplied, residual, inBand };
 }

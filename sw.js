@@ -2,7 +2,7 @@
 // Strategia v1 (da design): l'app carica dalla rete quando c'e; offline
 // serve l'ultima versione in cache. Le modifiche richiedono rete.
 
-const CACHE = 'mealprep-v20';
+const CACHE = 'mealprep-v21';
 const ASSETS = [
   './',
   './index.html',
