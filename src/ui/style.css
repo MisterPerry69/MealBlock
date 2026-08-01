@@ -230,11 +230,20 @@ input { font-family: inherit; }
 .lg--none { background: var(--card); border: 1px solid var(--line); }
 
 /* ---------- editor banco ---------- */
+.banco-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .banco-back {
-  display: inline-flex; align-items: center; gap: 4px; background: none; border: none;
-  color: var(--dim); font-size: 13px; font-weight: 600; padding: 6px 0; min-height: var(--tap);
+  background: none; border: none; color: var(--dim); width: 40px; height: 40px;
+  display: grid; place-items: center; flex: none;
 }
-.banco-back svg { width: 18px; height: 18px; }
+.banco-back svg { width: 20px; height: 20px; }
+.banco-name {
+  flex: 1; min-width: 0; background: none; border: none; text-align: left;
+  display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: var(--ink);
+}
+.banco-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banco-name__cat { font-size: 11px; font-weight: 700; color: #fff; background: var(--sage); border-radius: 6px; padding: 2px 7px; flex: none; }
+.banco-name__edit { color: var(--dim); display: grid; place-items: center; flex: none; }
+.banco-name__edit svg { width: 14px; height: 14px; }
 .banco-target { font-size: 13px; color: var(--dim); margin-bottom: 18px; font-weight: 500; }
 .banco-target b { color: var(--ink); font-weight: 700; }
 
@@ -304,6 +313,7 @@ select.f__input { appearance: none; }
 .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .f-grid .f { margin-bottom: 10px; }
 .f-hint { font-size: 11px; color: var(--dim); margin: -2px 0 12px; line-height: 1.4; }
+.bulk-ta { width: 100%; font-family: var(--mono, monospace); font-size: 13px; resize: vertical; min-height: 140px; }
 .acc-toggle {
   width: 100%; text-align: left; background: var(--bg); border: 1.5px solid var(--line);
   border-radius: 12px; padding: 11px 12px; display: flex; align-items: center; gap: 10px;
@@ -321,6 +331,11 @@ select.f__input { appearance: none; }
 .modal-btn--primary { background: var(--sage); border-color: var(--sage); color: #fff; }
 
 /* ricerca cibo nel modal */
+/* picker cibo: ricerca fissa in alto, risultati scrollabili, footer (grammi +
+   azioni) SEMPRE visibile in fondo (non spariscono sotto) */
+.picker { display: flex; flex-direction: column; max-height: 70vh; }
+.picker .food-results { flex: 1; min-height: 60px; }
+.picker__foot { flex: none; padding-top: 10px; border-top: 1px solid var(--line); margin-top: 6px; background: var(--card); }
 .food-results { max-height: 240px; overflow-y: auto; margin: 10px 0 4px; }
 .food-opt {
   width: 100%; text-align: left; background: none; border: none; border-radius: 10px;
@@ -329,6 +344,9 @@ select.f__input { appearance: none; }
 }
 .food-opt:hover, .food-opt:active { background: var(--bg); }
 .food-opt.is-sel { background: var(--sage-t); }
+.food-opt__chk { width: 20px; height: 20px; flex: none; border: 2px solid var(--line-2, #d7ddd9); border-radius: 6px; display: grid; place-items: center; color: #fff; margin-right: 4px; }
+.food-opt__chk.on { background: var(--sage); border-color: var(--sage); }
+.food-opt__chk:not(.on) svg { opacity: 0; }
 .food-opt__name { font-weight: 600; font-size: 14px; }
 .food-opt__macros { font-size: 11px; font-weight: 600; color: var(--dim); white-space: nowrap; }
 .food-none { color: var(--dim); font-size: 13px; padding: 12px; text-align: center; }
@@ -402,6 +420,29 @@ select.f__input { appearance: none; }
 .daymenu__i.is-muted { color: var(--dim); }
 .daymenu__i.is-muted svg { opacity: 0; }
 .daymenu__i.is-danger svg { color: var(--p); }
+
+/* ---------- lista della spesa ---------- */
+.shop-plans { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.shop-chip {
+  border: 1.5px solid var(--line); background: var(--card); color: var(--dim);
+  border-radius: 999px; padding: 6px 12px 6px 8px; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; opacity: .55;
+}
+.shop-chip.is-on { opacity: 1; border-color: var(--sage); }
+.shop-item {
+  width: 100%; text-align: left; background: var(--card); border: none; box-shadow: var(--shadow);
+  border-radius: var(--r-sm); padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: var(--tap);
+}
+.shop-check { width: 24px; height: 24px; flex: none; border: 2px solid #d7ddd9; border-radius: 7px; display: grid; place-items: center; color: #fff; }
+.shop-check.on { background: var(--sage); border-color: var(--sage); }
+.shop-check:not(.on) svg { opacity: 0; }
+.shop-name { flex: 1; font-weight: 600; font-size: 15px; }
+.shop-qty { font-family: var(--mono, monospace); font-weight: 700; font-size: 14px; color: var(--dim); }
+.shop-item.is-bought { opacity: .5; }
+.shop-item.is-bought .shop-name { text-decoration: line-through; }
+
+/* tabbar a 5 voci: un filo piu compatta */
+.tab button { padding: 4px 6px; }
 
 /* indicatore stato salvataggio */
 .savestatus {

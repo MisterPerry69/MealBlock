@@ -103,35 +103,45 @@ export function openFoodForm({ food, onSave }) {
 }
 
 /**
- * Form "fuori piano": scegli un cibo esistente o creane uno al volo, poi i grammi.
- * onConfirm riceve { foodId, grammatura } (creando il cibo se nuovo via onCreateFood).
+ * Picker cibo. Modalita SINGOLA: scegli un cibo + grammi -> onConfirm({foodId,grammatura}).
+ * Modalita MULTI (tieni premuto su un cibo): selezioni piu cibi -> onConfirmMulti([foodId])
+ *   e le grammature le decide il chiamante (ultima usata).
  */
-export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiungi cibo', preId = null, suggestGram = null }) {
+export function openSgarroForm({ foods, onCreateFood, onConfirm, onConfirmMulti, title = 'Aggiungi cibo', preId = null, suggestGram = null }) {
   return openModal({
     title,
     build(close) {
       const list = Object.values(foods);
       let selectedId = preId;
+      let multi = false;                 // modalita selezione multipla attiva?
+      const chosen = new Set();          // foodId selezionati in multi
 
-      // ricerca custom: campo testo + lista filtrata cliccabile coi valori
       const search = el('input', { class: 'f__input', type: 'text', placeholder: 'Cerca un cibo…', 'aria-label': 'Cerca cibo' });
       const results = el('div', { class: 'food-results' });
+      const foot = el('div', { class: 'picker__foot' });
+
+      const gram = field('Grammi', { type: 'text', inputmode: 'decimal', placeholder: 'es. 150' });
+      gram.input.addEventListener('focus', (e) => e.target.select());
+
+      function pickSingle(f) {
+        selectedId = f.id;
+        const g = suggestGram && suggestGram(f.id);
+        if (g && !gram.input.value) gram.input.value = String(g);
+        renderResults(); renderFoot(); gram.input.focus();
+      }
+      function enterMulti(f) { multi = true; chosen.add(f.id); renderResults(); renderFoot(); }
+      function toggleMulti(f) { if (chosen.has(f.id)) chosen.delete(f.id); else chosen.add(f.id); renderResults(); renderFoot(); }
 
       function renderResults() {
         const q = search.value.trim().toLowerCase();
-        const filtered = list.filter((f) => f.nome.toLowerCase().includes(q)).slice(0, 30);
+        const filtered = list.filter((f) => f.nome.toLowerCase().includes(q)).slice(0, 40);
         results.replaceChildren(...filtered.map((f) => {
           const p = f.per100g;
+          const sel = multi ? chosen.has(f.id) : (f.id === selectedId);
           const item = el('button', {
-            class: `food-opt ${f.id === selectedId ? 'is-sel' : ''}`,
-            onClick: () => {
-              selectedId = f.id;
-              // precompila la grammatura tipica di questo cibo (se conosciuta)
-              const g = suggestGram && suggestGram(f.id);
-              if (g && !gram.input.value) gram.input.value = String(g);
-              renderResults(); gram.input.focus();
-            },
+            class: `food-opt ${sel ? 'is-sel' : ''}`,
           }, [
+            multi ? el('span', { class: `food-opt__chk ${chosen.has(f.id) ? 'on' : ''}`, html: icon.check(12) }) : null,
             el('span', { class: 'food-opt__name', text: f.nome }),
             el('span', { class: 'food-opt__macros' }, [
               `${p.kcal} `,
@@ -140,32 +150,49 @@ export function openSgarroForm({ foods, onCreateFood, onConfirm, title = 'Aggiun
               el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
             ]),
           ]);
+          // click: singolo o toggle (in multi). Hold: entra in multi.
+          let held = false, timer = null;
+          const start = () => { held = false; timer = setTimeout(() => { held = true; if (onConfirmMulti) enterMulti(f); }, 450); };
+          const end = (e) => { clearTimeout(timer); if (held) return; e.preventDefault(); multi ? toggleMulti(f) : pickSingle(f); };
+          item.addEventListener('pointerdown', start);
+          item.addEventListener('pointerup', end);
+          item.addEventListener('pointerleave', () => clearTimeout(timer));
           return item;
         }));
         if (filtered.length === 0) results.append(el('div', { class: 'food-none', text: 'Nessun cibo. Creane uno nuovo qui sotto.' }));
       }
-      search.addEventListener('input', renderResults);
-      renderResults();
 
-      const gram = field('Grammi', { type: 'text', inputmode: 'decimal', placeholder: 'es. 150' });
-
-      const newBtn = el('button', { class: 'modal-btn', text: '+ Nuovo cibo', onClick: () => {
-        close();
-        openFoodForm({ onSave: (data) => {
-          const id = onCreateFood(data);
-          openSgarroForm({ foods: { ...foods, [id]: { id, ...data } }, onCreateFood, onConfirm, title, preId: id });
+      function renderFoot() {
+        const newBtn = el('button', { class: 'modal-btn', text: '+ Nuovo cibo', onClick: () => {
+          close();
+          openFoodForm({ onSave: (data) => {
+            const id = onCreateFood(data);
+            openSgarroForm({ foods: { ...foods, [id]: { id, ...data } }, onCreateFood, onConfirm, onConfirmMulti, title, suggestGram, preId: id });
+          }});
         }});
-      }});
 
-      const confirm = el('button', { class: 'modal-btn modal-btn--primary', text: 'Aggiungi', onClick: () => {
-        const g = parseFloat(String(gram.input.value).replace(',', '.')) || 0;
-        if (!selectedId) { search.focus(); return; }
-        if (!g) { gram.input.focus(); return; }
-        onConfirm({ foodId: selectedId, grammatura: g });
-        close();
-      }});
+        if (multi) {
+          const add = el('button', { class: 'modal-btn modal-btn--primary', text: `Aggiungi ${chosen.size} ${chosen.size === 1 ? 'cibo' : 'cibi'}`, onClick: () => {
+            if (chosen.size === 0) return;
+            onConfirmMulti([...chosen]); close();
+          }});
+          const hint = el('div', { class: 'f-hint', text: 'Selezione multipla: le grammature saranno le ultime usate. Tocca per aggiungere/togliere.' });
+          foot.replaceChildren(hint, el('div', { class: 'modal-actions' }, [newBtn, add]));
+        } else {
+          const add = el('button', { class: 'modal-btn modal-btn--primary', text: 'Aggiungi', onClick: () => {
+            const g = parseFloat(String(gram.input.value).replace(',', '.')) || 0;
+            if (!selectedId) { search.focus(); return; }
+            if (!g) { gram.input.focus(); return; }
+            onConfirm({ foodId: selectedId, grammatura: g }); close();
+          }});
+          foot.replaceChildren(gram.wrap, el('div', { class: 'modal-actions' }, [newBtn, add]));
+        }
+      }
 
-      return el('div', {}, [search, results, gram.wrap, el('div', { class: 'modal-actions' }, [newBtn, confirm])]);
+      search.addEventListener('input', renderResults);
+      renderResults(); renderFoot();
+
+      return el('div', { class: 'picker' }, [search, results, foot]);
     },
   });
 }
@@ -184,6 +211,7 @@ export function openRenameForm({ value, onSave }) {
     },
   });
 }
+
 
 /**
  * Modal proposte di ricalcolo: lista di modifiche spuntabili. onApply riceve

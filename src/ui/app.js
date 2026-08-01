@@ -16,6 +16,7 @@ import { renderPiani } from './screens/piani.js';
 import { renderBanco } from './screens/banco.js';
 import { renderRepertorio } from './screens/repertorio.js';
 import { renderStorico } from './screens/storico.js';
+import { renderSpesa } from './screens/spesa.js';
 import { openFoodForm, openSgarroForm, openRenameForm, openProposals } from './modal.js';
 
 // converte l'output dell'ottimizzatore in proposte per il modal (modifiche + aggiunte)
@@ -82,32 +83,36 @@ async function loadToday() {
 //      dispositivi). Salvataggio DIRETTO e IMMEDIATO a ogni azione: niente
 //      debounce, niente sendBeacon (che verso GAS falliva silenziosamente
 //      dicendo "salvato" senza scrivere). Semplice e affidabile.
+// Salvataggio SILENZIOSO in background: nessun avviso quando va bene. Solo se
+// fallisce mostra un badge d'errore CLICCABILE che ritenta il salvataggio.
+function saveInBackground(doSave) {
+  hideSaveError();
+  doSave().catch(() => showSaveError(doSave));
+}
+
 function saveLogReliable(log) {
   // aggiorna subito lo storico in memoria (UI coerente)
   const i = state.history.findIndex((l) => l.data === log.data);
   if (i >= 0) state.history[i] = log; else state.history.unshift(log);
-  // invia SUBITO al backend
-  saveStatus('salvo…');
-  store.saveLog(log)
-    .then(() => saveStatus('salvato'))
-    .catch((e) => saveStatus('errore: ' + (e && e.message ? e.message : e)));
+  saveInBackground(() => store.saveLog(log));
 }
 
-// indicatore di stato salvataggio, visibile a schermo
-let statusTimer = null;
-function saveStatus(text) {
+// badge d'errore salvataggio: appare solo se un salvataggio fallisce; cliccandolo
+// ritenta.
+function showSaveError(retry) {
   let box = document.getElementById('savestatus');
   if (!box) {
     box = document.createElement('div');
     box.id = 'savestatus';
-    box.className = 'savestatus';
     document.body.appendChild(box);
   }
-  const err = text.startsWith('errore');
-  box.textContent = err ? '⚠ ' + text : (text === 'salvato' ? '✓ salvato' : text);
-  box.className = 'savestatus ' + (err ? 'is-err' : (text === 'salvato' ? 'is-ok' : 'is-wait'));
-  clearTimeout(statusTimer);
-  if (!err) statusTimer = setTimeout(() => { box.classList.add('is-hidden'); }, 2000);
+  box.className = 'savestatus is-err';
+  box.textContent = '⚠ Non salvato — tocca per riprovare';
+  box.onclick = () => { box.textContent = '⌛ salvo…'; retry().then(hideSaveError).catch(() => showSaveError(retry)); };
+}
+function hideSaveError() {
+  const box = document.getElementById('savestatus');
+  if (box) box.className = 'savestatus is-hidden';
 }
 
 function queueSaveLog(log) { saveLogReliable(log); }
@@ -117,12 +122,15 @@ function installSaveGuards() { /* niente flush/beacon: salviamo gia a ogni azion
 function currentUsage() { return computeUsage(state.history || []); }
 
 // apre il picker cibo con suggerimenti: cibi del pasto in cima + grammatura
-// precompilata in base all'uso passato.
-function openSmartPicker({ mealId, onConfirm }) {
+// precompilata. onAdd riceve una LISTA di { foodId, grammatura } (1 elemento in
+// modalita singola, N in modalita selezione multipla).
+function openSmartPicker({ mealId, onAdd }) {
   const usage = currentUsage();
   const ordered = rankFoodsForMeal(Object.values(state.foods), usage, mealId);
   const foodsOrdered = {};
   for (const f of ordered) foodsOrdered[f.id] = f;
+  // grammatura per un cibo aggiunto in multi: ultima usata, o 100 di default
+  const gramFor = (foodId) => suggestGrams(usage, foodId, mealId) || 100;
   openSgarroForm({
     foods: foodsOrdered,
     suggestGram: (foodId) => suggestGrams(usage, foodId, mealId),
@@ -130,7 +138,8 @@ function openSmartPicker({ mealId, onConfirm }) {
       const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
       state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
     },
-    onConfirm,
+    onConfirm: ({ foodId, grammatura }) => onAdd([{ foodId, grammatura }]),
+    onConfirmMulti: (foodIds) => onAdd(foodIds.map((foodId) => ({ foodId, grammatura: gramFor(foodId) }))),
   });
 }
 
@@ -165,6 +174,12 @@ function refreshTrackerToday() {
   if (isSgarroDay(log)) return;
   const shown = state.editMode ? logMacros(log, foods) : eatenMacros(log, foods);
   renderTracker(shown, template.target);
+}
+
+// aggiorna solo il tracker del banco (totale del piano vs target) senza render
+function refreshTrackerBanco() {
+  const { plan } = state.banco;
+  renderTracker(logMacros({ meals: plan.meals }, state.foods), plan.target);
 }
 
 // ---- azioni passate alle schermate via ctx ----
@@ -260,8 +275,9 @@ const ctx = {
     const meal = state.today.log.meals[state.today.log.meals.length - 1];
     openSmartPicker({
       mealId: meal.id,
-      onConfirm: ({ foodId, grammatura }) => {
-        meal.righe.push({ foodId, grammatura, stato: 'bloccata', isSgarro: true, eaten: true });
+      onAdd: (items) => {
+        for (const { foodId, grammatura } of items)
+          meal.righe.push({ foodId, grammatura, stato: 'bloccata', isSgarro: true, eaten: true });
         persistToday();
       },
     });
@@ -270,6 +286,7 @@ const ctx = {
   addFood() {
     openFoodForm({ onSave: async (data) => { await ctx.createFood(data); render(); } });
   },
+
 
   editFood(id) {
     const food = state.foods[id];
@@ -327,7 +344,8 @@ const ctx = {
   replaceFood(mealId, rowIndex) {
     openSmartPicker({
       mealId,
-      onConfirm: ({ foodId, grammatura }) => {
+      onAdd: (items) => {
+        const { foodId, grammatura } = items[0]; // sostituzione = un solo cibo
         const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
         row.foodId = foodId; row.grammatura = grammatura;
         persistToday();
@@ -360,9 +378,10 @@ const ctx = {
   addRowToMeal(mealId) {
     openSmartPicker({
       mealId,
-      onConfirm: ({ foodId, grammatura }) => {
-        state.today.log.meals.find((m) => m.id === mealId).righe.push(
-          { foodId, grammatura, stato: 'aperta', isSgarro: false, eaten: false });
+      onAdd: (items) => {
+        const meal = state.today.log.meals.find((m) => m.id === mealId);
+        for (const { foodId, grammatura } of items)
+          meal.righe.push({ foodId, grammatura, stato: 'aperta', isSgarro: false, eaten: false });
         persistToday();
       },
     });
@@ -378,34 +397,53 @@ const ctx = {
     render({ resetScroll: true });
   },
 
+  // salvataggio AUTOMATICO del piano in background (come Oggi salva il log).
+  // Aggiorna anche la variante in memoria e, se e la variante di oggi, la giornata.
+  saveBanco() {
+    const plan = state.banco.plan;
+    // aggiorna in memoria subito
+    const i = state.variants.findIndex((v) => v.id === plan.id);
+    if (i >= 0) state.variants[i] = JSON.parse(JSON.stringify(plan));
+    if (state.today && state.today.log.variantId === plan.id) state.today.template = plan;
+    saveInBackground(() => store.saveVariant(plan));
+  },
+
   bancoClose() { state.banco = null; render({ resetScroll: true }); },
 
   bancoSetGram(mealId, index, grammi) {
     const meal = state.banco.plan.meals.find((m) => m.id === mealId);
     meal.righe[index].grammatura = Math.max(0, grammi || 0);
-    // niente render(): eviti di chiudere la tastiera passando tra i campi
+    // niente render() (chiuderebbe la tastiera): aggiorno solo il tracker + salvo
+    refreshTrackerBanco();
+    ctx.saveBanco();
+  },
+
+  bancoRename() {
+    openRenameForm({ value: state.banco.plan.nome, onSave: (nome) => {
+      state.banco.plan.nome = nome;
+      ctx.saveBanco();
+      render();
+    }});
   },
 
   bancoToggleLock(mealId, index) {
-    const meal = state.banco.plan.meals.find((m) => m.id === mealId);
-    const r = meal.righe[index];
+    const r = state.banco.plan.meals.find((m) => m.id === mealId).righe[index];
     r.locked = !r.locked;
-    render();
+    ctx.saveBanco(); render();
   },
 
   bancoRemove(mealId, index) {
-    const meal = state.banco.plan.meals.find((m) => m.id === mealId);
-    meal.righe.splice(index, 1);
-    render();
+    state.banco.plan.meals.find((m) => m.id === mealId).righe.splice(index, 1);
+    ctx.saveBanco(); render();
   },
 
   bancoAddFood(mealId) {
     openSmartPicker({
       mealId,
-      onConfirm: ({ foodId, grammatura }) => {
+      onAdd: (items) => {
         const meal = state.banco.plan.meals.find((m) => m.id === mealId);
-        meal.righe.push({ foodId, grammatura });
-        render();
+        for (const { foodId, grammatura } of items) meal.righe.push({ foodId, grammatura });
+        ctx.saveBanco(); render();
       },
     });
   },
@@ -415,42 +453,12 @@ const ctx = {
     const proposals = buildProposals(state.banco.plan, state.foods, currentUsage());
     openProposals({
       proposals, foods: state.foods,
-      onApply: (selected) => { applyProposals(state.banco.plan, selected); render(); },
+      onApply: (selected) => { applyProposals(state.banco.plan, selected); ctx.saveBanco(); render(); },
     });
-  },
-
-  async bancoSave() {
-    const plan = state.banco.plan;
-    await store.saveVariant(plan);
-    state.variants = await store.getVariants();
-
-    // se OGGI usa questa variante, chiedi se aggiornare la giornata al nuovo piano
-    const oggiUsaVariante = state.today && state.today.log.variantId === plan.id && !isSgarroDay(state.today.log);
-    state.banco = null;
-
-    if (oggiUsaVariante) {
-      state.today.template = plan;
-      const conferma = confirm('Hai modificato il piano di oggi. Aggiornare la giornata di oggi al nuovo piano? (le spunte "mangiato" verranno mantenute dove possibile)');
-      if (conferma) {
-        const fresh = buildLog(state.today.log.data, plan);
-        fresh.variantId = plan.id;
-        // mantieni le spunte dei cibi ancora presenti
-        for (const m of fresh.meals) {
-          const old = state.today.log.meals.find((x) => x.id === m.id);
-          for (const r of m.righe) {
-            const oldR = old?.righe.find((x) => x.foodId === r.foodId);
-            if (oldR?.eaten) r.eaten = true;
-          }
-        }
-        state.today.log = fresh;
-        await store.saveLog(fresh);
-      }
-    }
-    render({ resetScroll: true });
   },
 };
 
-const screens = { oggi: renderOggi, piani: renderPiani, repertorio: renderRepertorio, storico: renderStorico };
+const screens = { oggi: renderOggi, piani: renderPiani, repertorio: renderRepertorio, storico: renderStorico, spesa: renderSpesa };
 
 // render({resetScroll}): al cambio tab si torna in cima; per gli aggiornamenti
 // in-place (spunta, lucchetto) si preserva la posizione di scroll cosi la
@@ -473,6 +481,7 @@ function render({ resetScroll = false } = {}) {
 const TABS = [
   { id: 'oggi', label: 'Oggi', ic: 'tabOggi' },
   { id: 'piani', label: 'Piani', ic: 'tabPiani' },
+  { id: 'spesa', label: 'Spesa', ic: 'tabSpesa' },
   { id: 'repertorio', label: 'Cibi', ic: 'tabCibi' },
   { id: 'storico', label: 'Storico', ic: 'tabStorico' },
 ];

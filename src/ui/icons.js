@@ -6,6 +6,7 @@ export function svg(inner, size = 22) {
 
 export const paths = {
   'chevronDown': "<path d=\"m6 9 6 6 6-6\" />",
+  'cart': "<circle cx=\"8\" cy=\"21\" r=\"1\" /> <circle cx=\"19\" cy=\"21\" r=\"1\" /> <path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\" />",
   'pencil': "<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /> <path d=\"m15 5 4 4\" />",
   'refresh': "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /> <path d=\"M21 3v5h-5\" /> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /> <path d=\"M8 16H3v5\" />",
   'sunrise': "<path d=\"M12 2v8\" /> <path d=\"m4.93 10.93 1.41 1.41\" /> <path d=\"M2 18h2\" /> <path d=\"M20 18h2\" /> <path d=\"m19.07 10.93-1.41 1.41\" /> <path d=\"M22 22H2\" /> <path d=\"m8 6 4-4 4 4\" /> <path d=\"M16 18a4 4 0 0 0-8 0\" />",
@@ -55,6 +56,7 @@ export const icon = {
   pencil: (s) => svg(paths['pencil'], s),
   refresh: (s) => svg(paths['refresh'], s),
   chevronDown: (s) => svg(paths['chevronDown'], s),
+  tabSpesa: (s) => svg(paths['cart'], s),
   back: (s) => svg(paths['chevronLeft'], s),
   trash: (s) => svg(paths['trash2'], s),
   wand: (s) => svg(paths['wand2'], s),
