@@ -1,63 +1,50 @@
-// spesa.js — lista della spesa aggregata dai piani scelti, spuntabile.
+// spesa.js — lista della spesa della SETTIMANA visualizzata, spuntabile.
 
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
 import { round } from '../format.js';
+import { weekDays } from '../../core/day.js';
 
-// stato locale della schermata: quali piani includere, cosa e gia comprato
-let included = null;          // Set di variantId inclusi (null = default: le due Standard)
-const bought = new Set();     // foodId spuntati come comprati
+const MON = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+function dLabel(iso){ const [,m,d]=iso.split('-').map(Number); return `${d} ${MON[m-1]}`; }
+
+const bought = new Set(); // foodId gia comprati (sessione)
 
 export function renderSpesa(root, ctx) {
   clearTracker();
-  const variants = [...ctx.variantsOf('ON'), ...ctx.variantsOf('OFF')];
-
-  // default: includi le varianti "default" (Standard) di ON e OFF
-  if (included === null) {
-    included = new Set(variants.filter((v) => v.isDefault).map((v) => v.id));
-  }
+  const days = weekDays(ctx.weekRef);
 
   root.append(el('div', { class: 'hdr' }, [
     el('div', {}, [el('div', { class: 'hdr__title', text: 'Spesa' })]),
   ]));
 
-  // selettore piani da includere (chip)
-  root.append(el('div', { class: 'section-label', text: 'Piani inclusi' }));
-  const chips = el('div', { class: 'shop-plans' });
-  for (const v of variants) {
-    const on = included.has(v.id);
-    chips.append(el('button', {
-      class: `shop-chip ${on ? 'is-on' : ''}`,
-      onClick: () => { on ? included.delete(v.id) : included.add(v.id); ctx.rerender(); },
-    }, [
-      el('span', { class: `chip chip--${v.categoria === 'ON' ? 'on' : 'off'}`, text: v.categoria }),
-      ` ${v.nome}`,
-    ]));
-  }
-  root.append(chips);
+  root.append(el('div', { class: 'cal-nav' }, [
+    el('button', { class: 'cal-arrow', 'aria-label': 'Settimana precedente', html: icon.back(20), onClick: () => ctx.shiftWeek(-7) }),
+    el('div', { class: 'cal-title', text: `${dLabel(days[0])} – ${dLabel(days[6])}` }),
+    el('button', { class: 'cal-arrow', 'aria-label': 'Settimana successiva', html: icon.back(20).replace('m15 18-6-6 6-6','m9 18 6-6-6-6'), onClick: () => ctx.shiftWeek(7) }),
+  ]));
 
-  // aggrega gli ingredienti dei piani inclusi: somma grammature per foodId
+  // aggrega gli ingredienti di TUTTI i giorni assegnati della settimana
   const agg = {};
-  for (const v of variants) {
-    if (!included.has(v.id)) continue;
-    for (const meal of v.meals) for (const r of meal.righe) {
+  for (const iso of days) {
+    const log = ctx.logForDate(iso);
+    if (!log || !log.meals) continue;
+    for (const meal of log.meals) for (const r of (meal.righe || [])) {
       agg[r.foodId] = (agg[r.foodId] || 0) + (r.grammatura || 0);
     }
   }
-  const voci = Object.keys(agg)
-    .map((foodId) => ({ foodId, grammi: agg[foodId], nome: ctx.foods[foodId]?.nome || foodId }))
-    .sort((a, b) => (a.bought === b.bought ? a.nome.localeCompare(b.nome) : 0));
 
+  const voci = Object.keys(agg).map((foodId) => ({ foodId, grammi: agg[foodId], nome: ctx.foods[foodId]?.nome || foodId }));
   if (voci.length === 0) {
-    root.append(el('div', { class: 'empty', text: 'Seleziona almeno un piano per vedere la lista.' }));
+    root.append(el('div', { class: 'empty', text: 'Nessun giorno pianificato questa settimana. Assegna i piani dalla tab Settimana.' }));
     return;
   }
 
   root.append(el('div', { class: 'section-label', text: `${voci.length} cibi da comprare` }));
-  const stack = el('div', { class: 'stack' });
-  // non comprati prima, comprati (barrati) in fondo
   voci.sort((a, b) => (bought.has(a.foodId) === bought.has(b.foodId) ? a.nome.localeCompare(b.nome) : (bought.has(a.foodId) ? 1 : -1)));
+
+  const stack = el('div', { class: 'stack' });
   for (const voce of voci) {
     const isBought = bought.has(voce.foodId);
     stack.append(el('button', {

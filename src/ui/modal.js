@@ -197,6 +197,25 @@ export function openSgarroForm({ foods, onCreateFood, onConfirm, onConfirmMulti,
   });
 }
 
+/** Scelta rapida di un piano (variante) da assegnare a un giorno. */
+export function openPlanPicker({ variants, onPick }) {
+  return openModal({
+    title: 'Scegli un piano',
+    build(close) {
+      const list = el('div', { class: 'stack' }, variants.map((v) => el('button', {
+        class: 'item', onClick: () => { close(); onPick(v.id); },
+      }, [
+        el('div', { style: 'display:flex;align-items:center;gap:10px' }, [
+          el('span', { class: `chip chip--${v.categoria === 'ON' ? 'on' : 'off'}`, text: v.categoria }),
+          el('span', { class: 'item__title', text: v.nome }),
+        ]),
+        el('span', { class: 'item__meta', text: `${v.target.kcal} kcal` }),
+      ])));
+      return el('div', {}, [list]);
+    },
+  });
+}
+
 /** Rinomina: un solo campo testo. onSave(nuovoNome). */
 export function openRenameForm({ value, onSave }) {
   return openModal({

@@ -1,6 +1,6 @@
 // banco.js — editor "banco da lavoro" di una giornata. Pineapple-plus.
 
-import { el } from '../dom.js';
+import { el, gramInput } from '../dom.js';
 import { icon } from '../icons.js';
 import { renderTracker } from '../tracker.js';
 import { round, flatFoods, mealMacros } from '../format.js';
@@ -24,8 +24,15 @@ export function renderBanco(root, ctx) {
   const { plan, foods } = ctx.banco;
   const flat = flatFoods(foods);
 
-  root.append(el('button', { class: 'banco-back', onClick: () => ctx.bancoClose() }, [
-    el('span', { html: icon.back(18) }), `Piano ${plan.tipo}`,
+  // header: indietro + nome piano (rinominabile) a sx, Ricalcola icona a dx
+  root.append(el('div', { class: 'banco-hdr' }, [
+    el('button', { class: 'banco-back', 'aria-label': 'Indietro', html: icon.back(20), onClick: () => ctx.bancoClose() }),
+    el('button', { class: 'banco-name', onClick: () => ctx.bancoRename() }, [
+      el('span', { text: plan.nome || 'Piano' }),
+      el('span', { class: 'banco-name__cat', text: plan.tipo }),
+      el('span', { class: 'banco-name__edit', html: icon.pencil(14) }),
+    ]),
+    el('button', { class: 'ico-tool', 'aria-label': 'Ricalcola', html: icon.refresh(18), onClick: () => ctx.bancoAuto() }),
   ]));
 
   const t = plan.target;
@@ -35,13 +42,6 @@ export function renderBanco(root, ctx) {
   ]));
 
   for (const meal of plan.meals) root.append(mealBlock(meal, foods, flat, ctx));
-
-  root.append(el('div', { class: 'banco-actions' }, [
-    el('button', { class: 'banco-btn', onClick: () => ctx.bancoAuto() }, [
-      el('span', { html: icon.wand(17) }), 'Ricalcola',
-    ]),
-    el('button', { class: 'banco-btn banco-btn--primary', onClick: () => ctx.bancoSave() }, 'Salva'),
-  ]));
 
   // tracker = totale reale del piano (cosi come sta) vs target
   const allRows = [];
@@ -83,11 +83,10 @@ function editRow(mealId, r, index, foods, flat, ctx) {
         el('span', { class: 'mc mc--f', text: `${round(mm.fat)}F` }),
       ]),
     ]),
-    el('input', {
-      class: `erow__g ${r.locked ? 'is-locked' : ''}`, type: 'text', inputmode: 'decimal',
-      value: fmtG(r.grammatura), disabled: r.locked,
-      'aria-label': `Grammi di ${nome}`,
-      onChange: (e) => ctx.bancoSetGram(mealId, index, parseG(e.target.value)),
+    gramInput({
+      value: r.grammatura, disabled: r.locked, extraClass: r.locked ? 'is-locked' : '',
+      ariaLabel: `Grammi di ${nome}`,
+      onCommit: (g) => ctx.bancoSetGram(mealId, index, g),
     }),
     el('button', {
       class: 'erow__lock', 'aria-pressed': String(!!r.locked),

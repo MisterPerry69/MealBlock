@@ -2,7 +2,7 @@
 // Strategia v1 (da design): l'app carica dalla rete quando c'e; offline
 // serve l'ultima versione in cache. Le modifiche richiedono rete.
 
-const CACHE = 'mealprep-v22';
+const CACHE = 'mealprep-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -19,6 +19,7 @@ const ASSETS = [
   './src/ui/screens/banco.js',
   './src/ui/screens/repertorio.js',
   './src/ui/screens/storico.js',
+  './src/ui/screens/spesa.js',
   './src/core/solver.js',
   './src/core/day.js',
   './src/core/optimize.js',

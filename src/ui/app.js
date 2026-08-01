@@ -41,6 +41,7 @@ const state = {
   history: [],
   banco: null,     // { plan, foods } quando il banco da lavoro e aperto
   editMode: false, // modalita modifica giornata in Oggi
+  weekRef: null,   // data ISO di riferimento per la settimana mostrata in Piani
 };
 
 function todayISO() {
@@ -83,11 +84,15 @@ async function loadToday() {
 //      dispositivi). Salvataggio DIRETTO e IMMEDIATO a ogni azione: niente
 //      debounce, niente sendBeacon (che verso GAS falliva silenziosamente
 //      dicendo "salvato" senza scrivere). Semplice e affidabile.
-// Salvataggio SILENZIOSO in background: nessun avviso quando va bene. Solo se
-// fallisce mostra un badge d'errore CLICCABILE che ritenta il salvataggio.
-function saveInBackground(doSave) {
+// Salvataggio SILENZIOSO in background con RETRY automatico: i GAS falliscono a
+// volte per timeout/richieste ravvicinate. Ritenta 2 volte (con piccola pausa)
+// prima di mostrare il badge d'errore cliccabile.
+function saveInBackground(doSave, tentativi = 2) {
   hideSaveError();
-  doSave().catch(() => showSaveError(doSave));
+  doSave().catch((e) => {
+    if (tentativi > 0) setTimeout(() => saveInBackground(doSave, tentativi - 1), 800);
+    else showSaveError(() => doSave());
+  });
 }
 
 function saveLogReliable(log) {
@@ -387,21 +392,73 @@ const ctx = {
     });
   },
 
+  // ---- vista settimana (tab Piani) ----
+  get weekRef() { return state.weekRef || todayISO(); },
+  shiftWeek(deltaDays) {
+    const base = state.weekRef || todayISO();
+    const [y, m, d] = base.split('-').map(Number);
+    const nd = new Date(y, m - 1, d + deltaDays);
+    const p = (n) => String(n).padStart(2, '0');
+    state.weekRef = `${nd.getFullYear()}-${p(nd.getMonth() + 1)}-${p(nd.getDate())}`;
+    render({ resetScroll: true });
+  },
+  // log gia salvato per una data (dallo storico in memoria)
+  logForDate(dateISO) { return state.history.find((l) => l.data === dateISO) || null; },
+
+  // assegna una variante a un giorno: crea (o sostituisce) il log di quella data
+  assignPlanToDay(dateISO, variantId) {
+    const tpl = variantById(variantId);
+    if (!tpl) return;
+    const log = buildLog(dateISO, tpl);
+    log.variantId = tpl.id;
+    saveLogReliable(log); // aggiorna history + backend
+    render();
+  },
+
+  // rimuove il log assegnato a un giorno futuro (svuota lo slot)
+  clearDay(dateISO) {
+    state.history = state.history.filter((l) => l.data !== dateISO);
+    saveInBackground(() => store.saveLog({ data: dateISO, cleared: true, meals: [] }));
+    render();
+  },
+
   // ---- banco da lavoro ----
   get banco() { return state.banco; },
 
-  // openBanco riceve un id-variante (o una categoria, per compat: usa la default)
+  // openBanco: apre una VARIANTE (idOrCat) oppure un GIORNO (log con data).
   openBanco(idOrCat) {
     const tpl = variantById(idOrCat) || defaultVariant(idOrCat);
     state.banco = { plan: JSON.parse(JSON.stringify(tpl)), foods: state.foods };
     render({ resetScroll: true });
   },
 
+  // apre un giorno (log) nel banco per modificarlo indipendentemente dalla variante
+  openDayBanco(dateISO) {
+    const log = state.history.find((l) => l.data === dateISO);
+    if (!log) return;
+    const tpl = variantForLog(log);
+    // il "plan" del banco per un giorno: usa i pasti del log + il target della variante
+    state.banco = {
+      dayISO: dateISO,
+      plan: { id: log.variantId, nome: `${dateISO}`, tipo: log.tipo, target: tpl.target,
+        meals: JSON.parse(JSON.stringify(log.meals)) },
+      foods: state.foods,
+    };
+    render({ resetScroll: true });
+  },
+
   // salvataggio AUTOMATICO del piano in background (come Oggi salva il log).
   // Aggiorna anche la variante in memoria e, se e la variante di oggi, la giornata.
   saveBanco() {
-    const plan = state.banco.plan;
-    // aggiorna in memoria subito
+    const b = state.banco;
+    if (b.dayISO) {
+      // il banco sta modificando un GIORNO (log), non una variante: salva il log
+      const log = { data: b.dayISO, tipo: b.plan.tipo, variantId: b.plan.id, meals: JSON.parse(JSON.stringify(b.plan.meals)) };
+      saveLogReliable(log);
+      if (state.today && state.today.log.data === b.dayISO) state.today.log = log;
+      return;
+    }
+    const plan = b.plan;
     const i = state.variants.findIndex((v) => v.id === plan.id);
     if (i >= 0) state.variants[i] = JSON.parse(JSON.stringify(plan));
     if (state.today && state.today.log.variantId === plan.id) state.today.template = plan;
@@ -480,7 +537,7 @@ function render({ resetScroll = false } = {}) {
 
 const TABS = [
   { id: 'oggi', label: 'Oggi', ic: 'tabOggi' },
-  { id: 'piani', label: 'Piani', ic: 'tabPiani' },
+  { id: 'piani', label: 'Settimana', ic: 'tabPiani' },
   { id: 'spesa', label: 'Spesa', ic: 'tabSpesa' },
   { id: 'repertorio', label: 'Cibi', ic: 'tabCibi' },
   { id: 'storico', label: 'Storico', ic: 'tabStorico' },

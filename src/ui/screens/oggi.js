@@ -1,6 +1,6 @@
 // oggi.js — la schermata principale. Pineapple-plus.
 
-import { el } from '../dom.js';
+import { el, gramInput } from '../dom.js';
 import { icon } from '../icons.js';
 import { renderTracker } from '../tracker.js';
 import { eatenMacros, logMacros, mealMacros, flatFoods, round } from '../format.js';
@@ -155,10 +155,10 @@ function editFoodRow(mealId, r, index, foods, ctx) {
   return el('div', { class: 'erow' }, [
     el('button', { class: 'erow__swap', 'aria-label': `Sostituisci ${nome}`, text: nome,
       onClick: () => ctx.replaceFood(mealId, index) }),
-    el('input', {
-      class: `erow__g ${r.locked ? 'is-locked' : ''}`, type: 'text', inputmode: 'decimal',
-      value: fmtG(r.grammatura), disabled: r.locked, 'aria-label': `Grammi di ${nome}`,
-      onChange: (e) => ctx.setRowGram(mealId, index, parseFloat(String(e.target.value).replace(',', '.')) || 0),
+    gramInput({
+      value: r.grammatura, disabled: r.locked, extraClass: r.locked ? 'is-locked' : '',
+      ariaLabel: `Grammi di ${nome}`,
+      onCommit: (g) => ctx.setRowGram(mealId, index, g),
     }),
     el('button', { class: 'erow__lock', 'aria-pressed': String(!!r.locked),
       'aria-label': r.locked ? `${nome} bloccato` : `Blocca ${nome}`,

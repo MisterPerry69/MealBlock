@@ -14,6 +14,22 @@ export function weekdayKey(dateISO) {
   return WEEKDAYS[date.getDay()];
 }
 
+function toISO(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** I 7 giorni ISO (lunedi..domenica) della settimana che contiene dateISO. */
+export function weekDays(dateISO) {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const offset = (date.getDay() + 6) % 7; // getDay: dom=0 -> vogliamo lun=0
+  const monday = new Date(y, m - 1, d - offset);
+  const out = [];
+  for (let i = 0; i < 7; i++) out.push(toISO(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)));
+  return out;
+}
+
 /**
  * Crea un Log a partire da un DayTemplate per una data.
  * Ogni riga riceve uno stato: il pranzo dei giorni lavorativi nasce 'bloccata'

@@ -421,6 +421,20 @@ select.f__input { appearance: none; }
 .daymenu__i.is-muted svg { opacity: 0; }
 .daymenu__i.is-danger svg { color: var(--p); }
 
+/* ---------- vista settimana (day slot) ---------- */
+.day-slot {
+  width: 100%; text-align: left; background: var(--card); border: none; box-shadow: var(--shadow);
+  border-radius: var(--r-sm); padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap);
+}
+.day-slot.is-today { outline: 2px solid var(--sage); outline-offset: -2px; }
+.day-slot__d { display: flex; flex-direction: column; }
+.day-slot__dow { font-weight: 700; font-size: 15px; }
+.day-slot__date { font-size: 12px; color: var(--dim); }
+.day-slot__plan { display: flex; align-items: center; gap: 8px; }
+.day-slot__kcal { font-size: 12px; color: var(--dim); font-weight: 600; }
+.day-slot__empty { font-size: 13px; color: var(--sage-d); font-weight: 600; }
+.chip--sgarro { background: var(--p); }
+
 /* ---------- lista della spesa ---------- */
 .shop-plans { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
 .shop-chip {

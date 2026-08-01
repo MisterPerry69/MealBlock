@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { weekdayKey, buildLog, recalcLog, switchDayType, recalcPlan, markSgarroDay, isSgarroDay } from './day.js';
+import { weekdayKey, buildLog, recalcLog, switchDayType, recalcPlan, markSgarroDay, isSgarroDay, dayStatus, weekDays } from './day.js';
 
 const foods = {
   pollo: { id: 'pollo', per100g: { kcal: 165, carbo: 0, prot: 31, fat: 3.6 } },
@@ -148,4 +148,38 @@ test('markSgarroDay(false): ripristina pasti e tipo originali', () => {
   assert.ok(!isSgarroDay(back));
   // i pasti originali sono tornati (pranzo aveva pollo)
   assert.equal(back.meals.find((m) => m.id === 'pranzo').righe[0].foodId, 'pollo');
+});
+
+test('dayStatus: non tracciato se nessun cibo spuntato', () => {
+  const log = buildLog('2026-07-27', template);
+  assert.equal(dayStatus(log, foods).stato, 'vuoto');
+});
+
+test('dayStatus: sgarro se giornata SGARRO o ha righe sgarro', () => {
+  const s = markSgarroDay(buildLog('2026-07-27', template), true);
+  assert.equal(dayStatus(s, foods).stato, 'sgarro');
+  const log = buildLog('2026-07-27', template);
+  log.meals[0].righe.push({ foodId: 'pollo', grammatura: 100, stato: 'bloccata', isSgarro: true, eaten: true });
+  assert.equal(dayStatus(log, foods).stato, 'sgarro');
+});
+
+test('dayStatus: completo se ho spuntato qualcosa e nessuno sgarro', () => {
+  const log = buildLog('2026-07-27', template);
+  log.meals[0].righe[0].eaten = true;
+  assert.equal(dayStatus(log, foods).stato, 'ok');
+});
+
+test('weekDays: ritorna i 7 giorni ISO (lun-dom) della settimana di una data', () => {
+  // 2026-07-30 e giovedi -> la settimana va da lun 27 a dom 2 ago
+  const days = weekDays('2026-07-30');
+  assert.equal(days.length, 7);
+  assert.equal(days[0], '2026-07-27'); // lunedi
+  assert.equal(days[6], '2026-08-02'); // domenica
+  assert.ok(days.includes('2026-07-30'));
+});
+
+test('weekDays: gestisce il cambio mese', () => {
+  const days = weekDays('2026-08-01'); // sabato
+  assert.equal(days[0], '2026-07-27');
+  assert.equal(days[6], '2026-08-02');
 });

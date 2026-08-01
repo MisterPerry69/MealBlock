@@ -11,6 +11,7 @@ export function flatFoods(foods) {
     // include id e nome: il motore proposte li usa per le aggiunte
     out[id] = { id, nome: foods[id].nome, ...foods[id].per100g };
     if (foods[id].rangeGrammatura) out[id].rangeGrammatura = foods[id].rangeGrammatura;
+    if (foods[id].accessorio) out[id].accessorio = true;
   }
   return out;
 }
