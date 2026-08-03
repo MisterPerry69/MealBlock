@@ -1,6 +1,6 @@
 // modal.js — modal centrale riutilizzabile + form/dialoghi costruiti sopra.
 
-import { el } from './dom.js';
+import { el, gramInput } from './dom.js';
 import { icon } from './icons.js';
 
 // parse numero accettando virgola o punto come separatore decimale
@@ -41,6 +41,25 @@ function field(label, attrs = {}) {
   return { wrap, input };
 }
 
+// campo grammi "usa e getta" (niente popup nativo di selezione testo su Android),
+// con la stessa forma { wrap, input } di field() ma un input finto che espone
+// getter/setter .value che leggono il valore corrente anche a fuoco attivo.
+function gramField(label, placeholder) {
+  const real = gramInput({ value: '', extraClass: 'f__input', ariaLabel: label, onCommit: () => {} });
+  real.value = '';
+  real.placeholder = placeholder || '';
+  const input = {
+    get value() { return real === document.activeElement ? (real.placeholder || '') : real.value; },
+    set value(v) {
+      real.value = v === '' ? '' : String(v);
+      if (real === document.activeElement) real.placeholder = real.value;
+    },
+    focus: () => real.focus(),
+  };
+  const wrap = el('label', { class: 'f' }, [el('span', { class: 'f__label', text: label }), real]);
+  return { wrap, input };
+}
+
 /**
  * Form per creare/modificare un CIBO del repertorio.
  * onSave riceve { nome, per100g:{kcal,carbo,prot,fat} }.
@@ -51,7 +70,10 @@ export function openFoodForm({ food, onSave }) {
     build(close) {
       const p = food?.per100g || {};
       const rg = food?.rangeGrammatura || {};
+      const nomeRow = el('div', { class: 'f-grid', style: 'grid-template-columns: 64px 1fr' });
+      const emoji = field('Emoji', { type: 'text', value: food?.emoji || '', placeholder: '🍽️', maxlength: '4' });
       const nome = field('Nome', { type: 'text', value: food?.nome || '', placeholder: 'es. Petto di pollo' });
+      nomeRow.append(emoji.wrap, nome.wrap);
       const grid = el('div', { class: 'f-grid' });
       // type text + inputmode decimal: accetta virgola E punto (bug fix)
       const kcal = field('kcal / 100g', { type: 'text', inputmode: 'decimal', value: p.kcal ?? '' });
@@ -78,6 +100,7 @@ export function openFoodForm({ food, onSave }) {
         if (!nomeV) { nome.input.focus(); return; }
         const out = {
           nome: nomeV,
+          emoji: emoji.input.value.trim() || guessEmoji(nomeV),
           per100g: {
             kcal: num(kcal.input.value),
             carbo: num(carbo.input.value),
@@ -97,9 +120,26 @@ export function openFoodForm({ food, onSave }) {
         close();
       }});
 
-      return el('div', {}, [nome.wrap, grid, rangeGrid, rangeHint, accChk, el('div', { class: 'modal-actions' }, [save])]);
+      return el('div', {}, [nomeRow, grid, rangeGrid, rangeHint, accChk, el('div', { class: 'modal-actions' }, [save])]);
     },
   });
+}
+
+// suggerisce un'emoji dal nome del cibo (fallback generico se non riconosciuto)
+const EMOJI_HINTS = [
+  [/pollo|tacchino/i, '🍗'], [/manzo|vitello|bistecc/i, '🥩'], [/maiale|prosciutto|salame|bresaola/i, '🥓'],
+  [/pesce|tonno|salmone|merluzzo|branzino/i, '🐟'], [/gambero|scampi|cozze|vongole/i, '🦐'],
+  [/uovo|uova|albume/i, '🥚'], [/riso/i, '🍚'], [/pasta|penne|spaghetti|fusilli/i, '🍝'],
+  [/pane|panino/i, '🍞'], [/patat/i, '🥔'], [/avena/i, '🌾'], [/mela/i, '🍎'], [/banana/i, '🍌'],
+  [/arancia|mandarino/i, '🍊'], [/frutta|kiwi|pera|uva/i, '🍇'], [/verdur|insalata|zucchin|spinaci|broccoli/i, '🥦'],
+  [/pomodoro/i, '🍅'], [/carota/i, '🥕'], [/formaggio|mozzarella|parmigiano|grana/i, '🧀'],
+  [/yogurt/i, '🥣'], [/latte/i, '🥛'], [/olio/i, '🫒'], [/mandorle|noci|nocciole|frutta secca/i, '🥜'],
+  [/cioccolat/i, '🍫'], [/gelato/i, '🍨'], [/pizza/i, '🍕'], [/legumi|fagioli|ceci|lenticchie/i, '🫘'],
+  [/proteina|whey|integrator/i, '🥤'],
+];
+export function guessEmoji(nome) {
+  for (const [re, e] of EMOJI_HINTS) if (re.test(nome)) return e;
+  return '🍽️';
 }
 
 /**
@@ -120,8 +160,7 @@ export function openSgarroForm({ foods, onCreateFood, onConfirm, onConfirmMulti,
       const results = el('div', { class: 'food-results' });
       const foot = el('div', { class: 'picker__foot' });
 
-      const gram = field('Grammi', { type: 'text', inputmode: 'decimal', placeholder: 'es. 150' });
-      gram.input.addEventListener('focus', (e) => e.target.select());
+      const gram = gramField('Grammi', 'es. 150');
 
       function pickSingle(f) {
         selectedId = f.id;

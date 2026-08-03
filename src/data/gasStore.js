@@ -18,8 +18,12 @@ export function stampFirst(log) {
 
 export function createGasStore(url) {
   const TIMEOUT_MS = 15000; // GAS puo essere lento, ma non all'infinito
+  const RETRIES = 3;        // GAS ha cold-start/quota: un fallimento isolato non e definitivo
+  const RETRY_DELAY_MS = 900;
 
-  async function call(action, payload = {}) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function callOnce(action, payload) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     let res;
@@ -38,6 +42,19 @@ export function createGasStore(url) {
     const out = await res.json();
     if (!out.ok) throw new Error(out.error || 'errore backend');
     return out.data;
+  }
+
+  async function call(action, payload = {}) {
+    let lastErr;
+    for (let tentativo = 0; tentativo <= RETRIES; tentativo++) {
+      try {
+        return await callOnce(action, payload);
+      } catch (e) {
+        lastErr = e;
+        if (tentativo < RETRIES) await sleep(RETRY_DELAY_MS * (tentativo + 1));
+      }
+    }
+    throw lastErr;
   }
 
   // Cache del boot: foods/templates/schedule arrivano insieme.

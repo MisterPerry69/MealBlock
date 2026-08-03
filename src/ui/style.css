@@ -62,7 +62,11 @@ input { font-family: inherit; }
   border: 3px solid var(--sage-t); border-top-color: var(--sage);
   animation: loader-spin .8s linear infinite;
 }
-.loader__txt { font-size: 13px; font-weight: 600; color: var(--dim); }
+.loader__txt { font-size: 13px; font-weight: 600; color: var(--dim); text-align: center; max-width: 260px; }
+.loader__retry {
+  font-family: inherit; font-size: 14px; font-weight: 700; color: #fff;
+  background: var(--sage); border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer;
+}
 @keyframes loader-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .loader__spin { animation-duration: 2s; } }
 
@@ -189,8 +193,6 @@ input { font-family: inherit; }
 /* categorie e varianti in Piani */
 .cat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cat-add { background: var(--card); border: none; box-shadow: var(--shadow); border-radius: 10px; width: 36px; height: 36px; display: grid; place-items: center; color: var(--sage-d); }
-.item--variant { padding: 8px 10px 8px 14px; }
-.variant-open { flex: 1; text-align: left; background: none; border: none; padding: 6px 0; }
 .variant-default { font-size: 10px; font-weight: 700; color: var(--sage-d); background: var(--sage-t); border-radius: 6px; padding: 2px 6px; margin-left: 8px; }
 .variant-tools { display: flex; gap: 2px; }
 .vt { background: none; border: none; color: var(--dim); width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; }
@@ -421,19 +423,77 @@ select.f__input { appearance: none; }
 .daymenu__i.is-muted svg { opacity: 0; }
 .daymenu__i.is-danger svg { color: var(--p); }
 
-/* ---------- vista settimana (day slot) ---------- */
-.day-slot {
-  width: 100%; text-align: left; background: var(--card); border: none; box-shadow: var(--shadow);
-  border-radius: var(--r-sm); padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap);
+/* ---------- sotto-tab (Settimana/Target, ON/OFF) ---------- */
+.subtabs { display: flex; gap: 8px; margin-bottom: 16px; background: var(--card); border-radius: var(--r-sm); padding: 4px; box-shadow: var(--shadow); }
+.subtab {
+  flex: 1; border: none; background: none; color: var(--dim); font-weight: 700; font-size: 13px;
+  letter-spacing: .03em; padding: 10px 8px; border-radius: 9px; min-height: 40px;
 }
-.day-slot.is-today { outline: 2px solid var(--sage); outline-offset: -2px; }
-.day-slot__d { display: flex; flex-direction: column; }
-.day-slot__dow { font-weight: 700; font-size: 15px; }
-.day-slot__date { font-size: 12px; color: var(--dim); }
-.day-slot__plan { display: flex; align-items: center; gap: 8px; }
-.day-slot__kcal { font-size: 12px; color: var(--dim); font-weight: 600; }
-.day-slot__empty { font-size: 13px; color: var(--sage-d); font-weight: 600; }
+.subtab.is-on { background: var(--sage); color: #fff; }
+.subtabs--cat { max-width: 220px; }
+.subtab--on.is-on { background: var(--sage); }
+.subtab--off.is-on { background: var(--f); }
+
+/* ---------- vista settimana: griglia 2 colonne ---------- */
+.week-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.week-cell {
+  background: var(--card); border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; position: relative; min-height: 128px;
+}
+.week-cell.is-today { outline: 2px solid var(--sage); outline-offset: -2px; }
+.week-cell__d { display: flex; flex-direction: column; }
+.week-cell__dow { font-weight: 800; font-size: 12px; letter-spacing: .03em; }
+.week-cell__date { font-size: 11px; color: var(--dim); font-weight: 600; }
+.week-cell__add {
+  flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg);
+  border: 1.5px dashed var(--line); border-radius: 12px; color: var(--sage-d); min-height: 56px;
+}
+.week-cell__body {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px;
+  background: none; border: none; text-align: left; padding: 2px 0;
+}
+.week-cell__variant { font-size: 12px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+.week-cell__kcal { font-size: 11px; color: var(--dim); font-weight: 600; }
+.week-cell__x {
+  position: absolute; top: 6px; right: 6px; background: var(--bg); border: none; color: var(--dim);
+  width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center;
+}
 .chip--sgarro { background: var(--p); }
+
+/* ---------- Target: griglia 2 colonne "infinita" ---------- */
+.target-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.target-card {
+  background: var(--card); border-radius: var(--r-sm); box-shadow: var(--shadow); padding: 12px;
+  display: flex; flex-direction: column; gap: 8px; min-height: 88px;
+}
+.target-card__body { flex: 1; background: none; border: none; text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 0; }
+.target-card__name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.target-card__macro { font-size: 12px; color: var(--dim); font-weight: 600; }
+.target-card--head { grid-column: 1 / -1; }
+.target-card--head.cat-on { border-left: 4px solid var(--sage); }
+.target-card--head.cat-off { border-left: 4px solid var(--f); }
+.target-card--add {
+  align-items: center; justify-content: center; color: var(--sage-d); background: var(--bg);
+  border: 1.5px dashed var(--line);
+}
+.target-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.target-field { display: flex; flex-direction: column; gap: 4px; }
+.target-field__l { font-size: 10px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+.target-input {
+  width: 100%; font-size: 15px; font-weight: 700; text-align: center; padding: 8px 4px;
+  border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
+}
+.target-input:focus { outline: none; border-color: var(--sage); }
+
+/* ---------- griglia cibi (Repertorio) ---------- */
+.food-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.food-card {
+  background: var(--card); border: none; box-shadow: var(--shadow); border-radius: var(--r-sm);
+  padding: 14px 12px; text-align: left; display: flex; flex-direction: column; gap: 4px; min-height: 96px;
+}
+.food-card__emoji { font-size: 28px; line-height: 1; margin-bottom: 2px; }
+.food-card__name { font-weight: 700; font-size: 14px; line-height: 1.25; }
+.food-card__meta { font-size: 11px; color: var(--dim); font-weight: 500; }
 
 /* ---------- lista della spesa ---------- */
 .shop-plans { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }

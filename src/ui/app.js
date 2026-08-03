@@ -341,6 +341,15 @@ const ctx = {
     render();
   },
 
+  // modifica diretta di kcal/macro target di una variante (tab Target)
+  async setVariantTarget(variantId, target) {
+    const v = variantById(variantId);
+    if (!v) return;
+    await store.saveVariant({ ...v, target });
+    state.variants = await store.getVariants();
+    render();
+  },
+
   // ---- modifica giornata (matita in Oggi) ----
   get editMode() { return state.editMode; },
   toggleEditMode() { state.editMode = !state.editMode; render(); },
@@ -562,8 +571,8 @@ async function seedIfEmpty() {
   const variants = await store.getVariants();
   if (variants && variants.length) return;
   for (const id of Object.keys(seedFoods)) await store.saveFood(seedFoods[id]);
-  await store.saveVariant({ id: 'on-standard', nome: 'Standard', categoria: 'ON', isDefault: true, ...seedTemplates.ON });
-  await store.saveVariant({ id: 'off-standard', nome: 'Standard', categoria: 'OFF', isDefault: true, ...seedTemplates.OFF });
+  await store.saveVariant({ id: 'on-standard', nome: 'Giorno ON', categoria: 'ON', isDefault: true, ...seedTemplates.ON });
+  await store.saveVariant({ id: 'off-standard', nome: 'Giorno OFF', categoria: 'OFF', isDefault: true, ...seedTemplates.OFF });
   await store.saveSchedule(seedSchedule);
 }
 
@@ -571,11 +580,19 @@ function hideLoader() {
   const l = document.getElementById('loader');
   if (l) { l.classList.add('is-hidden'); setTimeout(() => l.remove(), 300); }
 }
-function showLoaderError(msg) {
+function showLoaderError(msg, onRetry) {
   const l = document.getElementById('loader');
   if (!l) return;
   l.querySelector('.loader__spin')?.remove();
   l.querySelector('.loader__txt').textContent = msg;
+  let btn = l.querySelector('.loader__retry');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.className = 'loader__retry';
+    btn.textContent = 'Riprova';
+    l.appendChild(btn);
+  }
+  btn.onclick = onRetry;
 }
 
 async function boot() {
@@ -592,7 +609,7 @@ async function boot() {
     hideLoader();
   } catch (e) {
     console.error(e);
-    showLoaderError('Impossibile caricare i dati. Controlla la connessione e riapri.');
+    showLoaderError('Impossibile caricare i dati. Controlla la connessione e riprova.', boot);
     return;
   }
 

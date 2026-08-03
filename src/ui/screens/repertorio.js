@@ -1,8 +1,9 @@
-// repertorio.js — i cibi. Vista manutenzione.
+// repertorio.js — i cibi. Griglia con emoji.
 
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
+import { guessEmoji } from '../modal.js';
 
 export function renderRepertorio(root, ctx) {
   clearTracker();
@@ -18,20 +19,19 @@ export function renderRepertorio(root, ctx) {
     return;
   }
 
-  const stack = el('div', { class: 'stack' });
+  const grid = el('div', { class: 'food-grid' });
   for (const f of foods) {
     const p = f.per100g;
-    stack.append(el('button', { class: 'item', onClick: () => ctx.editFood(f.id) }, [
-      el('div', {}, [
-        el('div', { class: 'item__title', text: f.nome }),
-        el('div', { class: 'item__meta' }, [
-          `${p.kcal} kcal · `,
-          el('span', { class: 'mc mc--c', text: `${p.carbo}C ` }),
-          el('span', { class: 'mc mc--p', text: `${p.prot}P ` }),
-          el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
-        ]),
+    grid.append(el('button', { class: 'food-card', onClick: () => ctx.editFood(f.id) }, [
+      el('div', { class: 'food-card__emoji', text: f.emoji || guessEmoji(f.nome) }),
+      el('div', { class: 'food-card__name', text: f.nome }),
+      el('div', { class: 'food-card__meta' }, [
+        `${p.kcal} kcal · `,
+        el('span', { class: 'mc mc--c', text: `${p.carbo}C ` }),
+        el('span', { class: 'mc mc--p', text: `${p.prot}P ` }),
+        el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
       ]),
     ]));
   }
-  root.append(stack);
+  root.append(grid);
 }
