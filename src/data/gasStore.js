@@ -64,11 +64,6 @@ export function createGasStore(url) {
     return cache;
   }
 
-  const dvar = (cat) => {
-    const inCat = (cache.variants || []).filter((v) => v.categoria === cat);
-    return inCat.find((v) => v.isDefault) || inCat[0];
-  };
-
   return {
     async getFoods() { return (await ensure()).foods; },
     async getLogs() { return (await ensure()).logs || []; },
@@ -85,7 +80,6 @@ export function createGasStore(url) {
         cache.variants = cache.variants || [];
         const i = cache.variants.findIndex((x) => x.id === saved.id);
         if (i >= 0) cache.variants[i] = saved; else cache.variants.push(saved);
-        if (saved.isDefault) cache.variants.forEach((x) => { if (x.categoria === saved.categoria && x.id !== saved.id) x.isDefault = false; });
       }
       return saved;
     },
@@ -93,10 +87,6 @@ export function createGasStore(url) {
       await call('deleteVariant', { id });
       if (cache) cache.variants = (cache.variants || []).filter((x) => x.id !== id);
     },
-    async getDefaultVariant(cat) { await ensure(); return dvar(cat); },
-    // compat
-    async getTemplate(cat) { await ensure(); return dvar(cat); },
-    async saveTemplate(t) { return this.saveVariant(t); },
 
     async getSchedule() { return (await ensure()).schedule; },
     async saveSchedule(schedule) {

@@ -15,7 +15,9 @@ const MEAL_IC = { colazione:'colazione', pranzo:'pranzo', cena:'cena', spuntino:
 const mealIconKey = (id) => MEAL_IC[id] || 'spuntino';
 
 export function renderOggi(root, ctx) {
-  const { log, foods, template } = ctx.today;
+  const { log } = ctx.today;
+  if (!log) { renderEmptyToday(root, ctx); return; }
+  const { foods, template } = ctx.today;
   const sgarro = isSgarroDay(log);
   const on = (sgarro ? (log.tipoBase || 'ON') : log.tipo) === 'ON';
   const cat = sgarro ? (log.tipoBase || 'ON') : log.tipo;
@@ -38,7 +40,7 @@ export function renderOggi(root, ctx) {
     el('span', { html: icon.plus(16) }), 'Fuori piano',
   ]));
 
-  const target = sgarro ? sgarroTarget(log, foods) : template.target;
+  const target = sgarro ? sgarroTarget(log, foods) : (template ? template.target : { kcal: 0, carbo: 0, prot: 0, fat: 0 });
   // in modalita modifica mostro il TOTALE della giornata (come nei piani), cosi
   // vedo dove arriva il piano mentre modifico; altrimenti mostro il MANGIATO.
   const shown = ctx.editMode ? logMacros(log, foods) : eatenMacros(log, foods);
@@ -171,3 +173,22 @@ function editFoodRow(mealId, r, index, foods, ctx) {
 
 // mostra grammi senza arrotondare
 function fmtG(g) { const n = Number(g) || 0; return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); }
+
+// Oggi senza piano assegnato: selettore rapido ON/OFF invece del contenuto normale.
+function renderEmptyToday(root, ctx) {
+  root.append(el('div', { class: 'ohdr' }, [
+    el('div', { class: 'ohdr__date', text: fmtDate(todayISOLocal()) }),
+  ]));
+  root.append(el('div', { class: 'empty-today' }, [
+    el('div', { class: 'empty-today__hint', text: 'Nessun piano assegnato a oggi. Scegli da dove partire:' }),
+    el('div', { class: 'empty-today__choices' }, [
+      el('button', { class: 'daybtn', html: icon.on(18) + '<span>ON</span>', onClick: () => ctx.quickAssignToday('ON') }),
+      el('button', { class: 'daybtn daybtn--off', html: icon.off(18) + '<span>OFF</span>', onClick: () => ctx.quickAssignToday('OFF') }),
+    ]),
+  ]));
+}
+
+function todayISOLocal() {
+  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

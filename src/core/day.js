@@ -139,19 +139,13 @@ export function recalcPlan(plan, foods, defaultRangePct = 2) {
 }
 
 /**
- * Cambia il tipo di un log (ON<->OFF). I pasti gia BLOCCATI mantengono
- * contenuto e stato invariati (es. pranzo cucinato): cambiare tipo non deve
- * toccare cio che e gia vero. I pasti aperti prendono il contenuto del nuovo
- * template. Restituisce un nuovo log (non muta quello passato).
+ * Cambia il TIPO di un log (ON<->OFF). Cambia solo `tipo`: i pasti restano
+ * esattamente quelli che c'erano, li aggiusti tu a mano verso il nuovo
+ * target (o con Ricalcola). Non mutare mai i piani salvati da Settimana.
+ * Restituisce un nuovo log (non muta quello passato).
  */
-export function switchDayType(log, nextTemplate) {
-  const fresh = buildLog(log.data, nextTemplate);
-  for (const meal of fresh.meals) {
-    const old = log.meals.find((m) => m.id === meal.id);
-    const wasLocked = old && old.righe.length && old.righe.every((r) => r.stato === 'bloccata');
-    if (wasLocked) meal.righe = old.righe.map((r) => ({ ...r }));
-  }
-  return fresh;
+export function switchDayType(log, nextTipo) {
+  return { ...log, tipo: nextTipo };
 }
 
 // Il solver vuole foods in formato piatto {kcal,carbo,prot,fat}. I nostri Food

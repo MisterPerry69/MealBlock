@@ -190,10 +190,9 @@ input { font-family: inherit; }
 
 .section-label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 22px 0 10px; }
 
-/* categorie e varianti in Piani */
+/* categorie e piani in Piani */
 .cat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cat-add { background: var(--card); border: none; box-shadow: var(--shadow); border-radius: 10px; width: 36px; height: 36px; display: grid; place-items: center; color: var(--sage-d); }
-.variant-default { font-size: 10px; font-weight: 700; color: var(--sage-d); background: var(--sage-t); border-radius: 6px; padding: 2px 6px; margin-left: 8px; }
 .variant-tools { display: flex; gap: 2px; }
 .vt { background: none; border: none; color: var(--dim); width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; }
 
@@ -382,6 +381,12 @@ select.f__input { appearance: none; }
 
 /* badge sgarro sul day toggle */
 .daybtn--sgarro { background: var(--p); box-shadow: 0px 5px 0px rgba(224,116,90,.30); }
+
+/* Oggi senza piano assegnato: selettore rapido ON/OFF */
+.empty-today { padding: 40px 8px; text-align: center; }
+.empty-today__hint { color: var(--dim); font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+.empty-today__choices { display: flex; gap: 12px; justify-content: center; }
+.empty-today__choices .daybtn { flex: 1; max-width: 140px; justify-content: center; padding: 18px; font-size: 16px; }
 
 /* header Oggi: data completa + controlli allineati */
 .ohdr {

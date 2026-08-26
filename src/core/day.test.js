@@ -55,36 +55,20 @@ test('recalcLog ridistribuisce le righe aperte lasciando fisse le bloccate', () 
   assert.ok(result.residual, 'lo scarto residuo e riportato');
 });
 
-test('switchDayType: un pasto bloccato NON cambia contenuto cambiando ON/OFF', () => {
-  const templateON = template; // pranzo pollo 200g, cena riso 100g
-  const templateOFF = {
-    tipo: 'OFF',
-    target: { kcal: 800, carbo: 20, prot: 120, fat: 30 },
-    meals: [
-      // Nel template OFF il pranzo e DIVERSO (riso al posto del pollo).
-      { id: 'pranzo', nome: 'Pranzo', righe: [{ foodId: 'riso', grammatura: 50 }] },
-      { id: 'cena',   nome: 'Cena',   righe: [{ foodId: 'pollo', grammatura: 100 }] },
-    ],
-  };
+test('switchDayType: cambia SOLO il tipo, i pasti restano identici', () => {
+  const log = buildLog('2026-07-27', template); // ON, pranzo pollo 200g bloccato, cena riso 100g aperta
+  const out = switchDayType(log, 'OFF');
 
-  // Log ON con pranzo bloccato (pollo 200g, gia cucinato).
-  const logON = buildLog('2026-07-27', templateON);
-  assert.equal(logON.meals.find((m) => m.id === 'pranzo').righe[0].stato, 'bloccata');
+  assert.equal(out.tipo, 'OFF');
+  assert.deepEqual(out.meals, log.meals); // contenuto identico, nessuna ricostruzione dal template
+  assert.notEqual(out, log); // nuovo oggetto, non mutazione in place
+});
 
-  // Passo a OFF.
-  const logOFF = switchDayType(logON, templateOFF);
-
-  const pranzo = logOFF.meals.find((m) => m.id === 'pranzo');
-  const cena = logOFF.meals.find((m) => m.id === 'cena');
-
-  assert.equal(logOFF.tipo, 'OFF');
-  // Il pranzo bloccato resta pollo 200g (cucinato), NON diventa riso del template OFF.
-  assert.equal(pranzo.righe[0].foodId, 'pollo');
-  assert.equal(pranzo.righe[0].grammatura, 200);
-  assert.equal(pranzo.righe[0].stato, 'bloccata');
-  // La cena (aperta) prende invece il contenuto del template OFF.
-  assert.equal(cena.righe[0].foodId, 'pollo'); // template OFF ha pollo a cena
-  assert.equal(cena.righe[0].stato, 'aperta');
+test('switchDayType: non muta il log originale', () => {
+  const log = buildLog('2026-07-27', template);
+  const originalTipo = log.tipo;
+  switchDayType(log, 'OFF');
+  assert.equal(log.tipo, originalTipo); // il log passato resta invariato
 });
 
 test('recalcPlan: dimensiona le righe auto verso il target, lascia fisse le manuali', () => {

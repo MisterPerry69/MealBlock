@@ -24,7 +24,11 @@ export function renderBanco(root, ctx) {
   const { plan, foods } = ctx.banco;
   const flat = flatFoods(foods);
 
-  // header: indietro + nome piano (rinominabile) a sx, Ricalcola icona a dx
+  // header: indietro + nome piano (rinominabile) a sx, azioni icona a dx.
+  // "Salva come piano" (floppy) compare solo per il banco di un GIORNO
+  // (ctx.banco.dayISO) e solo se non e SGARRO (blank canvas, nulla da salvare).
+  const isDay = !!ctx.banco.dayISO;
+  const isSgarroPlan = plan.tipo === 'SGARRO';
   root.append(el('div', { class: 'banco-hdr' }, [
     el('button', { class: 'banco-back', 'aria-label': 'Indietro', html: icon.back(20), onClick: () => ctx.bancoClose() }),
     el('button', { class: 'banco-name', onClick: () => ctx.bancoRename() }, [
@@ -32,6 +36,7 @@ export function renderBanco(root, ctx) {
       el('span', { class: 'banco-name__cat', text: plan.tipo }),
       el('span', { class: 'banco-name__edit', html: icon.pencil(14) }),
     ]),
+    (isDay && !isSgarroPlan) ? el('button', { class: 'ico-tool', 'aria-label': 'Salva come piano', html: icon.save(18), onClick: () => ctx.bancoSaveAsPlan() }) : null,
     el('button', { class: 'ico-tool', 'aria-label': 'Ricalcola', html: icon.refresh(18), onClick: () => ctx.bancoAuto() }),
   ]));
 

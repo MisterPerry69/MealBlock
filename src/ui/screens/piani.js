@@ -1,5 +1,5 @@
 // piani.js — tab "Settimana": 2 sotto-tab, SETTIMANA (griglia 7 giorni con
-// date reali) e TARGET (griglia varianti ON/OFF con macro editabili).
+// date reali) e TARGET (griglia piani ON/OFF con macro editabili).
 
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
@@ -110,22 +110,19 @@ function renderTarget(root, ctx) {
     const m = logMacros({ meals: v.meals }, ctx.foods);
     grid.append(el('div', { class: 'target-card' }, [
       el('button', { class: 'target-card__body', onClick: () => ctx.openBanco(v.id) }, [
-        el('div', { class: 'target-card__name' }, [
-          v.nome, v.isDefault ? el('span', { class: 'variant-default', text: 'default' }) : null,
-        ]),
+        el('div', { class: 'target-card__name', text: v.nome }),
         el('div', { class: 'target-card__macro', text: `${round(m.kcal)} / ${v.target.kcal} kcal` }),
       ]),
       el('div', { class: 'variant-tools' }, [
         el('button', { class: 'vt', 'aria-label': 'Rinomina', html: icon.pencil(15), onClick: () => ctx.renameVariant(v.id) }),
-        !v.isDefault ? el('button', { class: 'vt', 'aria-label': 'Default', html: icon.check(15), onClick: () => ctx.setDefaultVariant(v.id) }) : null,
-        !v.isDefault ? el('button', { class: 'vt', 'aria-label': 'Elimina', html: icon.trash(15), onClick: () => ctx.deleteVariant(v.id) }) : null,
+        el('button', { class: 'vt', 'aria-label': 'Elimina', html: icon.trash(15), onClick: () => ctx.deleteVariant(v.id) }),
       ]),
     ]));
   }
 
-  // card finale: aggiungi nuova variante
+  // card finale: aggiungi nuovo piano
   grid.append(el('button', {
-    class: 'target-card target-card--add', 'aria-label': `Nuova variante ${targetCat}`,
+    class: 'target-card target-card--add', 'aria-label': `Nuovo piano ${targetCat}`,
     html: icon.plus(24), onClick: () => ctx.createVariant(targetCat),
   }));
 
@@ -133,7 +130,7 @@ function renderTarget(root, ctx) {
 }
 
 function targetHeaderCard(cat, varianti, ctx) {
-  const base = varianti.find((v) => v.isDefault) || varianti[0];
+  const base = varianti[0];
   const target = base?.target || { kcal: 0, carbo: 0, prot: 0, fat: 0 };
 
   const field = (key, label) => {

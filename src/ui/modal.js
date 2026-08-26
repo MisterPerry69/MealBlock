@@ -255,6 +255,30 @@ export function openPlanPicker({ variants, onPick }) {
   });
 }
 
+/**
+ * Scelta rapida alla creazione di un nuovo piano: da zero o duplicando uno
+ * esistente della stessa categoria. Se non ci sono piani da duplicare, salta
+ * dritto a onFromScratch senza aprire nulla.
+ */
+export function openNewPlanChoice({ categoria, existing, onFromScratch, onDuplicate }) {
+  if (!existing || existing.length === 0) { onFromScratch(); return; }
+  return openModal({
+    title: `Nuovo piano ${categoria}`,
+    build(close) {
+      const scratch = el('button', { class: 'item', onClick: () => { close(); onFromScratch(); } }, [
+        el('div', { class: 'item__title', text: 'Parti da zero' }),
+      ]);
+      const dup = el('button', { class: 'item', onClick: () => {
+        close();
+        openPlanPicker({ variants: existing, onPick: (id) => onDuplicate(id) });
+      }}, [
+        el('div', { class: 'item__title', text: 'Duplica un piano esistente' }),
+      ]);
+      return el('div', { class: 'stack' }, [scratch, dup]);
+    },
+  });
+}
+
 /** Rinomina: un solo campo testo. onSave(nuovoNome). */
 export function openRenameForm({ value, onSave }) {
   return openModal({
