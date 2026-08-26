@@ -28,6 +28,7 @@ export function createMockStore(seed = {}) {
   let variants = clone(seed.variants ?? seedVariants());
   let schedule = clone(seed.schedule ?? seedSchedule);
   const logs = clone(seed.logs ?? {});
+  const extras = clone(seed.extras ?? {}); // { weekKey: [{nome}, ...] }
 
   return {
     async getFoods() { return clone(foods); },
@@ -47,5 +48,8 @@ export function createMockStore(seed = {}) {
     async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
     async saveLog(log) { const s = stampFirst(log); logs[s.data] = clone(s); return clone(s); },
     async getLogs() { return Object.values(clone(logs)).sort((a, b) => (a.data < b.data ? 1 : -1)); },
+
+    async getExtras(weekKey) { return clone(extras[weekKey] ?? []); },
+    async saveExtras(weekKey, items) { extras[weekKey] = clone(items); return clone(items); },
   };
 }

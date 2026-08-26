@@ -6,7 +6,7 @@ import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
 import { logMacros, round } from '../format.js';
 import { weekDays, weekdayKey, isSgarroDay } from '../../core/day.js';
-import { openPlanPicker } from '../modal.js';
+import { openPlanPicker, openConfirm } from '../modal.js';
 
 const DOW_FULL = { lun: 'LUNEDÌ', mar: 'MARTEDÌ', mer: 'MERCOLEDÌ', gio: 'GIOVEDÌ', ven: 'VENERDÌ', sab: 'SABATO', dom: 'DOMENICA' };
 const MON = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
@@ -92,6 +92,15 @@ function chooseFor(iso, ctx) {
   });
 }
 
+function confirmDelete(v, ctx) {
+  openConfirm({
+    title: 'Eliminare il piano?',
+    message: `"${v.nome}" verrà eliminato definitivamente.`,
+    confirmLabel: 'Elimina',
+    onConfirm: () => ctx.deleteVariant(v.id),
+  });
+}
+
 // =================== TARGET ===================
 
 function renderTarget(root, ctx) {
@@ -115,7 +124,7 @@ function renderTarget(root, ctx) {
       ]),
       el('div', { class: 'variant-tools' }, [
         el('button', { class: 'vt', 'aria-label': 'Rinomina', html: icon.pencil(15), onClick: () => ctx.renameVariant(v.id) }),
-        el('button', { class: 'vt', 'aria-label': 'Elimina', html: icon.trash(15), onClick: () => ctx.deleteVariant(v.id) }),
+        el('button', { class: 'vt', 'aria-label': 'Elimina', html: icon.trash(15), onClick: () => confirmDelete(v, ctx) }),
       ]),
     ]));
   }

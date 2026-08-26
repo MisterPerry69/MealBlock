@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { weekdayKey, buildLog, recalcLog, switchDayType, recalcPlan, markSgarroDay, isSgarroDay, dayStatus, weekDays } from './day.js';
+import { weekdayKey, buildLog, switchDayType, markSgarroDay, isSgarroDay, dayStatus, weekDays } from './day.js';
 
 const foods = {
   pollo: { id: 'pollo', per100g: { kcal: 165, carbo: 0, prot: 31, fat: 3.6 } },
@@ -41,20 +41,6 @@ test('buildLog nel weekend non blocca il pranzo di default', () => {
   assert.equal(pranzo.righe[0].stato, 'aperta');
 });
 
-test('recalcLog ridistribuisce le righe aperte lasciando fisse le bloccate', () => {
-  // Pranzo bloccato (pollo 200g = 330 kcal). Target 1000 kcal.
-  // La cena (riso, aperta) deve scalare per avvicinarsi al resto.
-  const log = buildLog('2026-07-27', template); // pranzo bloccato
-  const result = recalcLog(log, template.target, foods);
-
-  const pranzo = result.meals.find((m) => m.id === 'pranzo');
-  const cena = result.meals.find((m) => m.id === 'cena');
-
-  assert.equal(pranzo.righe[0].grammatura, 200); // bloccato: invariato
-  assert.notEqual(cena.righe[0].grammatura, 100); // aperto: aggiustato
-  assert.ok(result.residual, 'lo scarto residuo e riportato');
-});
-
 test('switchDayType: cambia SOLO il tipo, i pasti restano identici', () => {
   const log = buildLog('2026-07-27', template); // ON, pranzo pollo 200g bloccato, cena riso 100g aperta
   const out = switchDayType(log, 'OFF');
@@ -69,48 +55,6 @@ test('switchDayType: non muta il log originale', () => {
   const originalTipo = log.tipo;
   switchDayType(log, 'OFF');
   assert.equal(log.tipo, originalTipo); // il log passato resta invariato
-});
-
-test('recalcPlan: dimensiona le righe auto verso il target, lascia fisse le manuali', () => {
-  // Banco da lavoro: pranzo con pollo grammatura FISSA (manuale) + riso AUTO.
-  // Target: coprire 200g pollo + una certa quota di carbo dal riso.
-  const target = { kcal: 590, carbo: 56, prot: 67.4, fat: 7.5 };
-  const plan = {
-    tipo: 'ON',
-    target,
-    meals: [
-      { id: 'pranzo', nome: 'Pranzo', righe: [
-        { foodId: 'pollo', grammatura: 200, auto: false }, // manuale, fissa
-        { foodId: 'riso', grammatura: 100, auto: true },   // auto, da dimensionare
-      ] },
-    ],
-  };
-
-  const { plan: out, totals } = recalcPlan(plan, foods);
-  const righe = out.meals[0].righe;
-
-  assert.equal(righe[0].grammatura, 200);          // manuale: invariata
-  assert.equal(righe[0].foodId, 'pollo');
-  assert.notEqual(righe[1].grammatura, 100);        // auto: dimensionata
-  assert.ok(totals, 'ritorna i totali per le barre');
-  // totali vicini al target dopo il dimensionamento
-  assert.ok(Math.abs(totals.kcal - target.kcal) < 60, 'kcal vicino al target');
-});
-
-test('recalcPlan: totali riflettono TUTTI i cibi (manuali + auto)', () => {
-  const plan = {
-    tipo: 'ON',
-    target: { kcal: 1000, carbo: 100, prot: 100, fat: 20 },
-    meals: [
-      { id: 'colazione', nome: 'Colazione', righe: [
-        { foodId: 'pollo', grammatura: 100, auto: false },
-      ] },
-    ],
-  };
-  const { totals } = recalcPlan(plan, foods);
-  // 100g pollo = 165 kcal, 0 C, 31 P, 3.6 F
-  assert.equal(Math.round(totals.kcal), 165);
-  assert.equal(Math.round(totals.prot), 31);
 });
 
 test('markSgarroDay: blank canvas — stessi pasti ma svuotati', () => {

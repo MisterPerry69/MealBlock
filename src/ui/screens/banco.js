@@ -37,7 +37,6 @@ export function renderBanco(root, ctx) {
       el('span', { class: 'banco-name__edit', html: icon.pencil(14) }),
     ]),
     (isDay && !isSgarroPlan) ? el('button', { class: 'ico-tool', 'aria-label': 'Salva come piano', html: icon.save(18), onClick: () => ctx.bancoSaveAsPlan() }) : null,
-    el('button', { class: 'ico-tool', 'aria-label': 'Ricalcola', html: icon.refresh(18), onClick: () => ctx.bancoAuto() }),
   ]));
 
   const t = plan.target;

@@ -1,8 +1,5 @@
 // day.js — logica di dominio del "giorno": costruire il log dal template,
-// gestire blocchi/aperture e ricalcolare con il solver.
-// Puro: nessuna dipendenza da DOM o storage.
-
-import { redistribute, macrosOfRows } from './solver.js';
+// gestire blocchi/aperture, stato sgarro. Puro: nessuna dipendenza da DOM o storage.
 
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
 const WORKDAYS = new Set(['lun', 'mar', 'mer', 'gio', 'ven']);
@@ -98,47 +95,6 @@ export function markSgarroDay(log, attiva) {
 }
 
 /**
- * Banco da lavoro: dimensiona le righe "auto" di un template verso il target,
- * lasciando fisse le righe manuali (auto:false). Restituisce il template con le
- * grammature auto aggiornate + i totali di TUTTI i cibi (per le barre).
- *
- * Riusa lo stesso motore di recalcLog: auto:false = "bloccata", auto:true =
- * "aperta". Non muta il plan passato.
- */
-export function recalcPlan(plan, foods, defaultRangePct = 2) {
-  // Nel banco le grammature auto possono variare molto (stai costruendo da zero),
-  // quindi il range di default e piu ampio che in Home.
-  const flat = flatFoods(foods);
-
-  const locked = [];
-  const open = [];
-  const openRefs = [];
-  const clone = { ...plan, meals: plan.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r })) })) };
-
-  for (const meal of clone.meals) {
-    for (const riga of meal.righe) {
-      if (riga.auto) { open.push({ foodId: riga.foodId, grammatura: riga.grammatura }); openRefs.push(riga); }
-      else { locked.push({ foodId: riga.foodId, grammatura: riga.grammatura }); }
-    }
-  }
-
-  if (open.length > 0) {
-    const lockedMacros = macrosOfRows(locked, flat);
-    const rest = {};
-    for (const m of ['kcal', 'carbo', 'prot', 'fat']) rest[m] = plan.target[m] - lockedMacros[m];
-    const { rows } = redistribute({ rest, openRows: open, foods: flat, defaultRangePct });
-    rows.forEach((row, i) => { openRefs[i].grammatura = row.grammatura; });
-  }
-
-  // Totali di tutti i cibi del piano, per le barre.
-  const allRows = [];
-  for (const meal of clone.meals) for (const r of meal.righe) allRows.push(r);
-  const totals = macrosOfRows(allRows, flat);
-
-  return { plan: clone, totals };
-}
-
-/**
  * Cambia il TIPO di un log (ON<->OFF). Cambia solo `tipo`: i pasti restano
  * esattamente quelli che c'erano, li aggiusti tu a mano verso il nuovo
  * target (o con Ricalcola). Non mutare mai i piani salvati da Settimana.
@@ -146,51 +102,4 @@ export function recalcPlan(plan, foods, defaultRangePct = 2) {
  */
 export function switchDayType(log, nextTipo) {
   return { ...log, tipo: nextTipo };
-}
-
-// Il solver vuole foods in formato piatto {kcal,carbo,prot,fat}. I nostri Food
-// hanno .per100g. Questa vista adatta il formato senza duplicare i dati.
-function flatFoods(foods) {
-  const out = {};
-  for (const id of Object.keys(foods)) {
-    out[id] = { ...foods[id].per100g };
-    if (foods[id].rangeGrammatura) out[id].rangeGrammatura = foods[id].rangeGrammatura;
-  }
-  return out;
-}
-
-/**
- * Ricalcola un log: tiene fisse le righe 'bloccata', ridistribuisce le 'aperta'
- * per avvicinarsi al target. Restituisce un nuovo log con le grammature
- * aggiornate + lo scarto residuo.
- */
-export function recalcLog(log, target, foods) {
-  const flat = flatFoods(foods);
-
-  // Raccoglie tutte le righe con un riferimento alla loro posizione, cosi da
-  // riscriverle dopo la ridistribuzione.
-  const locked = [];
-  const open = [];
-  const openRefs = [];
-  for (const meal of log.meals) {
-    for (const riga of meal.righe) {
-      if (riga.stato === 'bloccata') {
-        locked.push({ foodId: riga.foodId, grammatura: riga.grammatura });
-      } else {
-        open.push({ foodId: riga.foodId, grammatura: riga.grammatura });
-        openRefs.push(riga);
-      }
-    }
-  }
-
-  const lockedMacros = macrosOfRows(locked, flat);
-  const rest = {};
-  for (const m of ['kcal', 'carbo', 'prot', 'fat']) rest[m] = target[m] - lockedMacros[m];
-
-  const { rows, residual } = redistribute({ rest, openRows: open, foods: flat });
-
-  // Riscrive le grammature aperte nel log (stesso ordine di openRefs).
-  rows.forEach((row, i) => { openRefs[i].grammatura = row.grammatura; });
-
-  return { ...log, residual };
 }

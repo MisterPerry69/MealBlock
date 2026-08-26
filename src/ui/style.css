@@ -330,6 +330,7 @@ select.f__input { appearance: none; }
   border-radius: 12px; padding: 13px; font-weight: 700; font-size: 14px; min-height: var(--tap);
 }
 .modal-btn--primary { background: var(--sage); border-color: var(--sage); color: #fff; }
+.modal-btn--danger { background: #c0392b; border-color: #c0392b; color: #fff; }
 
 /* ricerca cibo nel modal */
 /* picker cibo: ricerca fissa in alto, risultati scrollabili, footer (grammi +
@@ -351,33 +352,6 @@ select.f__input { appearance: none; }
 .food-opt__name { font-weight: 600; font-size: 14px; }
 .food-opt__macros { font-size: 11px; font-weight: 600; color: var(--dim); white-space: nowrap; }
 .food-none { color: var(--dim); font-size: 13px; padding: 12px; text-align: center; }
-
-/* proposte di ricalcolo (spuntabili) */
-.prop {
-  width: 100%; text-align: left; background: var(--bg); border: 1.5px solid var(--line);
-  border-radius: 12px; padding: 11px 12px; display: flex; align-items: center; gap: 11px;
-  margin-bottom: 8px; min-height: 52px;
-}
-.prop__check {
-  width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--line);
-  display: grid; place-items: center; color: #fff; flex: none;
-}
-.prop[aria-pressed="true"] .prop__check { background: var(--sage); border-color: var(--sage); }
-.prop[aria-pressed="true"] .prop__check svg { opacity: 1; }
-.prop__check svg { opacity: 0; }
-.prop[aria-pressed="false"] { opacity: .55; }
-.prop__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.prop__name { font-weight: 600; font-size: 14px; }
-.prop__delta { font-size: 13px; color: var(--sage-d); font-weight: 700; }
-.prop__why { font-size: 11px; color: var(--dim); flex: none; }
-
-/* riepilogo modifiche */
-.chg-list { display: flex; flex-direction: column; }
-.chg { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
-.chg__name { font-weight: 600; font-size: 14px; }
-.chg__delta { font-weight: 700; font-size: 14px; color: var(--dim); }
-.chg__arrow { color: var(--sage-d); margin: 0 2px; }
-.chg-res { margin-top: 14px; font-size: 13px; color: var(--dim); font-weight: 500; }
 
 /* badge sgarro sul day toggle */
 .daybtn--sgarro { background: var(--p); box-shadow: 0px 5px 0px rgba(224,116,90,.30); }
@@ -501,17 +475,15 @@ select.f__input { appearance: none; }
 .food-card__meta { font-size: 11px; color: var(--dim); font-weight: 500; }
 
 /* ---------- lista della spesa ---------- */
-.shop-plans { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
-.shop-chip {
-  border: 1.5px solid var(--line); background: var(--card); color: var(--dim);
-  border-radius: 999px; padding: 6px 12px 6px 8px; font-size: 13px; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 6px; opacity: .55;
-}
-.shop-chip.is-on { opacity: 1; border-color: var(--sage); }
 .shop-item {
-  width: 100%; text-align: left; background: var(--card); border: none; box-shadow: var(--shadow);
-  border-radius: var(--r-sm); padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: var(--tap);
+  background: var(--card); border-radius: var(--r-sm); box-shadow: var(--shadow);
+  display: flex; align-items: stretch; overflow: hidden;
 }
+.shop-item__main {
+  flex: 1; text-align: left; background: none; border: none;
+  padding: 13px 14px; display: flex; align-items: center; gap: 12px; min-height: var(--tap);
+}
+.shop-item__del { flex: none; background: none; border: none; color: var(--faint); width: 44px; display: grid; place-items: center; }
 .shop-check { width: 24px; height: 24px; flex: none; border: 2px solid #d7ddd9; border-radius: 7px; display: grid; place-items: center; color: #fff; }
 .shop-check.on { background: var(--sage); border-color: var(--sage); }
 .shop-check:not(.on) svg { opacity: 0; }
@@ -519,6 +491,9 @@ select.f__input { appearance: none; }
 .shop-qty { font-family: var(--mono, monospace); font-weight: 700; font-size: 14px; color: var(--dim); }
 .shop-item.is-bought { opacity: .5; }
 .shop-item.is-bought .shop-name { text-decoration: line-through; }
+
+.shop-adder { display: flex; gap: 8px; margin-top: 16px; }
+.shop-adder .f__input { flex: 1; }
 
 /* tabbar a 5 voci: un filo piu compatta */
 .tab button { padding: 4px 6px; }

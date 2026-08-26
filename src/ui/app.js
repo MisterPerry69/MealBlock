@@ -7,27 +7,16 @@ import { createMockStore } from '../data/store.js';
 import { createGasStore } from '../data/gasStore.js';
 import { GAS_URL } from '../data/config.js';
 import { seedFoods, seedTemplates, seedSchedule } from '../data/seed.js';
-import { buildLog, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
-import { optimizePlan } from '../core/optimize.js';
+import { buildLog, switchDayType, markSgarroDay, isSgarroDay, weekDays } from '../core/day.js';
 import { computeUsage, suggestGrams, rankFoodsForMeal } from '../core/usage.js';
-import { flatFoods, logMacros, eatenMacros } from './format.js';
+import { logMacros, eatenMacros } from './format.js';
 import { renderOggi } from './screens/oggi.js';
 import { renderPiani } from './screens/piani.js';
 import { renderBanco } from './screens/banco.js';
 import { renderRepertorio } from './screens/repertorio.js';
 import { renderStorico } from './screens/storico.js';
 import { renderSpesa } from './screens/spesa.js';
-import { openFoodForm, openSgarroForm, openRenameForm, openProposals, openPlanPicker, openNewPlanChoice } from './modal.js';
-
-// converte l'output dell'ottimizzatore in proposte per il modal (modifiche + aggiunte)
-function buildProposals(plan, foods, usage) {
-  const flat = flatFoods(foods);
-  const { changes, additions } = optimizePlan(plan, flat, { usage });
-  const proposals = [];
-  for (const c of changes) proposals.push({ id: c.mealId + ':' + c.foodId, tipo: 'modifica', mealId: c.mealId, foodId: c.foodId, daG: c.daG, aG: c.aG });
-  for (const a of additions) proposals.push({ id: 'add:' + a.mealId + ':' + a.foodId, tipo: 'aggiunta', mealId: a.mealId, foodId: a.foodId, daG: 0, aG: a.grammatura });
-  return proposals;
-}
+import { openFoodForm, openSgarroForm, openRenameForm, openPlanPicker, openNewPlanChoice } from './modal.js';
 
 // Se hai incollato l'URL GAS in config.js usa il backend reale, altrimenti mock.
 const store = GAS_URL ? createGasStore(GAS_URL) : createMockStore();
@@ -42,6 +31,7 @@ const state = {
   banco: null,     // { plan, foods } quando il banco da lavoro e aperto
   editMode: false, // modalita modifica giornata in Oggi
   weekRef: null,   // data ISO di riferimento per la settimana mostrata in Piani
+  extras: {},      // { weekKey: [{nome}, ...] } voci extra della spesa, per settimana
 };
 
 function todayISO() {
@@ -139,25 +129,9 @@ function openSmartPicker({ mealId, onAdd }) {
   });
 }
 
-// applica le proposte selezionate a un piano/log: modifiche (cambia grammatura)
-// e aggiunte (inserisce una nuova riga nel pasto indicato).
-function applyProposals(planOrLog, selected) {
-  for (const p of selected) {
-    const meal = planOrLog.meals.find((m) => m.id === p.mealId);
-    if (!meal) continue;
-    if (p.tipo === 'aggiunta') {
-      meal.righe.push({ foodId: p.foodId, grammatura: p.aG, stato: 'aperta', isSgarro: false, eaten: false });
-    } else {
-      const row = meal.righe.find((r) => r.foodId === p.foodId);
-      if (row) row.grammatura = p.aG;
-    }
-  }
-}
-
 // Persiste il log corrente: render SUBITO, salvataggio in background (niente
-// attesa dei secondi del GAS). NON ricalcola: le grammature le decide l'utente o
-// il tasto Ricalcola (che apre le proposte). Il cambio giorno/variante non deve
-// toccare le grammature.
+// attesa dei secondi del GAS). Le grammature le decide sempre l'utente a mano.
+// Il cambio giorno/piano non deve toccare le grammature.
 function persistToday() {
   render();
   queueSaveLog(state.today.log);
@@ -192,9 +166,10 @@ const ctx = {
   variantsOf: (cat) => variantsOf(cat),
   variantForLog: (log) => variantForLog(log),
 
-  async toggleDayType() {
-    // ciclo ON <-> OFF. Se la giornata era SGARRO, torna prima al tipo base.
-    // Cambia SOLO il tipo/target: i cibi del giorno restano quelli che erano.
+  // cambia SOLO tipo/target del giorno (i cibi restano quelli che erano).
+  // enterEdit: dopo il cambio entra subito in modalita modifica, dato che i
+  // macro sono cambiati e quasi certamente ci sara qualcosa da aggiustare.
+  toggleDayType(enterEdit = false) {
     const log = state.today.log;
     const base = isSgarroDay(log) ? (log.tipoBase || 'ON') : log.tipo;
     const nuovoTipo = base === 'ON' ? 'OFF' : 'ON';
@@ -202,17 +177,7 @@ const ctx = {
     next = switchDayType(next, nuovoTipo);
     state.today.log = next;
     state.today.template = variantForLog(next);
-    persistToday();
-  },
-
-  // applica un piano specifico alla giornata di oggi: SOSTITUISCE i pasti con
-  // quelli del piano scelto (a differenza di toggleDayType, che li preserva).
-  async applyVariant(variantId) {
-    const tpl = variantById(variantId);
-    if (!tpl) return;
-    const next = { ...buildLog(state.today.log.data, tpl), variantId: tpl.id };
-    state.today.log = next;
-    state.today.template = tpl;
+    if (enterEdit) state.editMode = true;
     persistToday();
   },
 
@@ -236,28 +201,6 @@ const ctx = {
     row.eaten = !row.eaten;
     render();
     queueSaveLog(state.today.log);
-  },
-
-  // ricalcolo forzato dall'utente (tasto refresh in Oggi)
-  // Ricalcola in Oggi: stesso motore del banco (proposte spuntabili).
-  recalcNow() {
-    const { log, template } = state.today;
-    if (isSgarroDay(log)) return; // SGARRO: nessun target rigido
-    // cio che ho gia MANGIATO (eaten) o bloccato e intoccabile: non ha senso
-    // proporre di cambiarne la grammatura.
-    const plan = {
-      target: template ? template.target : emptyTarget(),
-      meals: log.meals.map((m) => ({ ...m, righe: m.righe.map((r) => ({ ...r, locked: r.locked || r.eaten || r.stato === 'bloccata' })) })),
-    };
-    const proposals = buildProposals(plan, state.foods, currentUsage());
-    openProposals({
-      proposals, foods: state.foods,
-      onApply: (selected) => {
-        applyProposals(state.today.log, selected);
-        render();
-        queueSaveLog(state.today.log);
-      },
-    });
   },
 
   // crea un cibo nel repertorio, ritorna il suo id
@@ -343,10 +286,12 @@ const ctx = {
     }});
   },
 
-  async deleteVariant(variantId) {
-    await store.deleteVariant(variantId);
-    state.variants = await store.getVariants();
+  deleteVariant(variantId) {
+    // aggiorna subito la UI (niente attesa dei secondi del GAS), poi cancella
+    // in background: stesso pattern di saveLogReliable per i log.
+    state.variants = state.variants.filter((v) => v.id !== variantId);
     render();
+    saveInBackground(() => store.deleteVariant(variantId));
   },
 
   // modifica diretta di kcal/macro target di una variante (tab Target)
@@ -421,6 +366,28 @@ const ctx = {
   },
   // log gia salvato per una data (dallo storico in memoria)
   logForDate(dateISO) { return state.history.find((l) => l.data === dateISO) || null; },
+
+  // ---- voci extra della lista spesa (non legate a nessun piano), per settimana ----
+  // sincrono: legge dalla cache locale. Se la settimana non e ancora in cache,
+  // ritorna [] e avvia il caricamento in background (si aggiorna da solo al render).
+  extrasOf(weekKey) {
+    if (weekKey in state.extras) return state.extras[weekKey];
+    state.extras[weekKey] = [];
+    store.getExtras(weekKey).then((items) => { state.extras[weekKey] = items || []; render(); }).catch(() => {});
+    return state.extras[weekKey];
+  },
+  addExtra(weekKey, nome) {
+    const items = [...ctx.extrasOf(weekKey), { nome }];
+    state.extras[weekKey] = items;
+    render();
+    saveInBackground(() => store.saveExtras(weekKey, items));
+  },
+  removeExtra(weekKey, index) {
+    const items = ctx.extrasOf(weekKey).filter((_, i) => i !== index);
+    state.extras[weekKey] = items;
+    render();
+    saveInBackground(() => store.saveExtras(weekKey, items));
+  },
 
   // assegna una variante a un giorno: crea (o sostituisce) il log di quella data
   assignPlanToDay(dateISO, variantId) {
@@ -538,15 +505,6 @@ const ctx = {
         for (const { foodId, grammatura } of items) meal.righe.push({ foodId, grammatura });
         ctx.saveBanco(); render();
       },
-    });
-  },
-
-  // Ricalcola = PROPONE modifiche/aggiunte spuntabili (ottimizzatore multi-macro).
-  bancoAuto() {
-    const proposals = buildProposals(state.banco.plan, state.foods, currentUsage());
-    openProposals({
-      proposals, foods: state.foods,
-      onApply: (selected) => { applyProposals(state.banco.plan, selected); ctx.saveBanco(); render(); },
     });
   },
 

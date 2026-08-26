@@ -105,5 +105,9 @@ export function createGasStore(url) {
       }
       return saved;
     },
+
+    // voci extra della lista spesa (non legate a nessun piano), per settimana
+    async getExtras(weekKey) { return call('getExtras', { weekKey }); },
+    async saveExtras(weekKey, items) { return call('saveExtras', { weekKey, items }); },
   };
 }

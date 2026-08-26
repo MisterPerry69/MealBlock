@@ -20,16 +20,13 @@ export function renderOggi(root, ctx) {
   const { foods, template } = ctx.today;
   const sgarro = isSgarroDay(log);
   const on = (sgarro ? (log.tipoBase || 'ON') : log.tipo) === 'ON';
-  const cat = sgarro ? (log.tipoBase || 'ON') : log.tipo;
-  const varianti = ctx.variantsOf(cat);
 
-  // header: data completa a sinistra; a destra 🔄 ✏️ | ON/OFF ▼
+  // header: data completa a sinistra; a destra ✏️ | ON/OFF ▼
   root.append(el('div', { class: 'ohdr' }, [
     el('div', { class: 'ohdr__date', text: fmtDate(log.data) }),
     el('div', { class: 'ohdr__ctrl' }, [
-      el('button', { class: 'ico-tool', 'aria-label': 'Ricalcola', html: icon.refresh(18), onClick: () => ctx.recalcNow() }),
       el('button', { class: `ico-tool ${ctx.editMode ? 'is-active' : ''}`, 'aria-label': ctx.editMode ? 'Fine modifica' : 'Modifica', html: icon.pencil(18), onClick: () => ctx.toggleEditMode() }),
-      dayControl(sgarro, on, varianti, log, ctx),
+      dayControl(sgarro, on, ctx),
     ]),
   ]));
 
@@ -56,8 +53,8 @@ function sgarroTarget(log, foods) {
   return { kcal: t.kcal || 1, carbo: t.carbo || 1, prot: t.prot || 1, fat: t.fat || 1 };
 }
 
-// pill ON/OFF/SGARRO + chevron che apre il menu (varianti + azioni giorno)
-function dayControl(sgarro, on, varianti, log, ctx) {
+// pill ON/OFF/SGARRO + chevron che apre il menu (solo ON/OFF/SGARRO, azioni giorno)
+function dayControl(sgarro, on, ctx) {
   const cls = sgarro ? 'daybtn--sgarro' : (on ? '' : 'daybtn--off');
   const label = sgarro ? 'SGARRO' : (on ? 'ON' : 'OFF');
   const ic = sgarro ? 'offplan' : (on ? 'on' : 'off');
@@ -66,29 +63,23 @@ function dayControl(sgarro, on, varianti, log, ctx) {
     class: `daybtn ${cls}`,
     'aria-label': `Giornata ${label}. Apri opzioni giorno.`,
     html: icon[ic](16) + `<span>${label}</span>` + icon.chevronDown(15),
-    onClick: () => openDayMenu(btn, sgarro, on, varianti, log, ctx),
+    onClick: () => openDayMenu(sgarro, on, ctx),
   });
   return btn;
 }
 
-function openDayMenu(anchor, sgarro, on, varianti, log, ctx) {
+function openDayMenu(sgarro, on, ctx) {
   const items = [];
 
-  // switch categoria ON/OFF
-  items.push({ label: on ? 'Passa a OFF' : 'Passa a ON', icon: on ? 'off' : 'on', act: () => ctx.toggleDayType() });
-
-  // varianti della categoria corrente
-  if (!sgarro && varianti.length > 0) {
-    for (const v of varianti) {
-      items.push({ label: v.nome, icon: 'check', muted: v.id !== log.variantId, act: () => ctx.applyVariant(v.id) });
-    }
-  }
+  // switch ON<->OFF: cambia solo il target, poi entra subito in modifica
+  // (i macro cambiano, quasi certamente ci sara qualcosa da aggiustare a mano).
+  items.push({ label: on ? 'Passa a OFF' : 'Passa a ON', icon: on ? 'off' : 'on', act: () => ctx.toggleDayType(true) });
 
   // sgarro on/off
   items.push({ label: sgarro ? 'Annulla sgarro' : 'Segna come sgarro', icon: 'offplan', danger: !sgarro, act: () => ctx.toggleSgarroDay() });
 
   const menu = el('div', { class: 'daymenu' }, items.map((it) => el('button', {
-    class: `daymenu__i ${it.muted ? 'is-muted' : ''} ${it.danger ? 'is-danger' : ''}`,
+    class: `daymenu__i ${it.danger ? 'is-danger' : ''}`,
     html: icon[it.icon](16) + `<span>${it.label}</span>`,
     onClick: () => { close(); it.act(); },
   })));

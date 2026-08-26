@@ -279,6 +279,19 @@ export function openNewPlanChoice({ categoria, existing, onFromScratch, onDuplic
   });
 }
 
+/** Conferma generica prima di un'azione distruttiva (es. elimina). */
+export function openConfirm({ title = 'Sei sicuro?', message = '', confirmLabel = 'Elimina', onConfirm }) {
+  return openModal({
+    title,
+    build(close) {
+      const body = message ? el('div', { class: 'f-hint', text: message }) : null;
+      const cancel = el('button', { class: 'modal-btn', text: 'Annulla', onClick: close });
+      const confirm = el('button', { class: 'modal-btn modal-btn--danger', text: confirmLabel, onClick: () => { close(); onConfirm(); } });
+      return el('div', {}, [body, el('div', { class: 'modal-actions' }, [cancel, confirm])].filter(Boolean));
+    },
+  });
+}
+
 /** Rinomina: un solo campo testo. onSave(nuovoNome). */
 export function openRenameForm({ value, onSave }) {
   return openModal({
@@ -295,76 +308,3 @@ export function openRenameForm({ value, onSave }) {
 }
 
 
-/**
- * Modal proposte di ricalcolo: lista di modifiche spuntabili. onApply riceve
- * l'array delle proposte selezionate.
- */
-export function openProposals({ proposals, foods, onApply }) {
-  return openModal({
-    title: 'Proposte di ricalcolo',
-    build(close) {
-      if (!proposals.length) {
-        return el('div', {}, [
-          el('div', { class: 'empty', text: 'Il piano è già in linea. Nessuna modifica proposta.' }),
-        ]);
-      }
-
-      const checks = proposals.map((p) => ({ p, on: true }));
-
-      const list = el('div', { class: 'chg-list' }, checks.map((c) => {
-        const nome = foods[c.p.foodId]?.nome || c.p.foodId;
-        const isAdd = c.p.tipo === 'aggiunta';
-        const su = c.p.aG > c.p.daG;
-        const verso = isAdd ? 'aggiungi' : (su ? '↑' : '↓');
-        const box = el('button', {
-          class: 'prop', 'aria-pressed': 'true',
-          onClick: () => { c.on = !c.on; box.setAttribute('aria-pressed', String(c.on)); },
-        }, [
-          el('span', { class: 'prop__check', html: icon.check(13) }),
-          el('span', { class: 'prop__body' }, [
-            el('span', { class: 'prop__name' }, [isAdd ? '+ ' : '', nome]),
-            el('span', { class: 'prop__delta', text: isAdd ? `aggiungi ${c.p.aG}g` : `${c.p.daG}g → ${c.p.aG}g` }),
-          ]),
-          el('span', { class: 'prop__why', text: verso }),
-        ]);
-        return box;
-      }));
-
-      const apply = el('button', { class: 'modal-btn modal-btn--primary', text: 'Applica selezionate', onClick: () => {
-        onApply(checks.filter((c) => c.on).map((c) => c.p));
-        close();
-      }});
-
-      return el('div', {}, [list, el('div', { class: 'modal-actions' }, [apply])]);
-    },
-  });
-}
-
-/** Modal di sola lettura: riepilogo modifiche al piano dopo un ricalcolo. */
-export function openChangesSummary({ changes, residual }) {
-  return openModal({
-    title: 'Piano aggiornato',
-    build() {
-      const rows = changes.length
-        ? changes.map((c) => el('div', { class: 'chg' }, [
-            el('span', { class: 'chg__name', text: c.nome }),
-            el('span', { class: 'chg__delta' }, [
-              `${c.prima}g `, el('span', { class: 'chg__arrow', text: '→' }), ` ${c.dopo}g`,
-            ]),
-          ]))
-        : [el('div', { class: 'empty', text: 'Nessuna grammatura da aggiustare.' })];
-
-      const res = residual ? el('div', { class: 'chg-res', text: residualText(residual) }) : null;
-      return el('div', {}, [el('div', { class: 'chg-list' }, rows), res]);
-    },
-  });
-}
-
-function residualText(r) {
-  const parts = [];
-  for (const [k, label, unit] of [['kcal','kcal',''],['carbo','C','g'],['prot','P','g'],['fat','F','g']]) {
-    const d = Math.round(r[k]);
-    if (Math.abs(d) >= (k === 'kcal' ? 30 : 5)) parts.push(`${d > 0 ? '+' : ''}${d}${unit} ${label}`);
-  }
-  return parts.length ? `Scarto residuo: ${parts.join(', ')}` : 'Giornata in fascia.';
-}
