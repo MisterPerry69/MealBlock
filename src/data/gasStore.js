@@ -88,10 +88,10 @@ export function createGasStore(url) {
       if (cache) cache.variants = (cache.variants || []).filter((x) => x.id !== id);
     },
 
-    async getSchedule() { return (await ensure()).schedule; },
-    async saveSchedule(schedule) {
-      const saved = await call('saveSchedule', { schedule });
-      if (cache) cache.schedule = saved;
+    async getTargets() { return (await ensure()).targets; },
+    async saveTargets(targets) {
+      const saved = await call('saveTargets', { targets });
+      if (cache) cache.targets = saved;
       return saved;
     },
     async getLog(dateISO) { return call('getLog', { data: dateISO }); },

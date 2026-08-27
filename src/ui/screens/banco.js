@@ -21,7 +21,7 @@ function fmtG(g) {
 }
 
 export function renderBanco(root, ctx) {
-  const { plan, foods } = ctx.banco;
+  const { plan, foods, target } = ctx.banco;
   const flat = flatFoods(foods);
 
   // header: indietro + nome piano (rinominabile) a sx, azioni icona a dx.
@@ -39,10 +39,9 @@ export function renderBanco(root, ctx) {
     (isDay && !isSgarroPlan) ? el('button', { class: 'ico-tool', 'aria-label': 'Salva come piano', html: icon.save(18), onClick: () => ctx.bancoSaveAsPlan() }) : null,
   ]));
 
-  const t = plan.target;
   root.append(el('div', { class: 'banco-target' }, [
-    'target ', el('b', { text: `${t.kcal}` }), ' kcal · ',
-    el('b', { text: `${t.carbo}` }), 'C ', el('b', { text: `${t.prot}` }), 'P ', el('b', { text: `${t.fat}` }), 'F',
+    'target ', el('b', { text: `${target.kcal}` }), ' kcal · ',
+    el('b', { text: `${target.carbo}` }), 'C ', el('b', { text: `${target.prot}` }), 'P ', el('b', { text: `${target.fat}` }), 'F',
   ]));
 
   for (const meal of plan.meals) root.append(mealBlock(meal, foods, flat, ctx));
@@ -50,7 +49,7 @@ export function renderBanco(root, ctx) {
   // tracker = totale reale del piano (cosi come sta) vs target
   const allRows = [];
   for (const meal of plan.meals) for (const r of meal.righe) allRows.push(r);
-  renderTracker(macrosOfRows(allRows, flat), plan.target);
+  renderTracker(macrosOfRows(allRows, flat), target);
 }
 
 function mealBlock(meal, foods, flat, ctx) {

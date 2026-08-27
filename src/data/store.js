@@ -1,17 +1,20 @@
 // store.js — livello dati con interfaccia unica (mock in memoria).
 //
 // Modello piani: ON e OFF sono due CATEGORIE; dentro ognuna vivono piu piani,
-// ciascuno con id, nome, categoria. Nessun piano ha priorita sugli altri.
+// ciascuno con id, nome, categoria, meals. Nessun piano ha priorita sugli
+// altri. Il target (kcal/macro) NON e del piano: e UNICO per categoria
+// (vedi targets), condiviso da tutti i piani di quella categoria.
 //
 // Interfaccia (async):
 //   getFoods() / saveFood(food)
 //   getVariants()                    -> Variant[]  (tutti i piani, ON e OFF)
 //   saveVariant(variant)             -> Variant    (upsert per id)
 //   deleteVariant(id)
-//   getSchedule() / saveSchedule()
+//   getTargets() / saveTargets(targets)   -> { ON:{...}, OFF:{...} }
 //   getLog(dateISO) / saveLog(log)
+//   getExtras(weekKey) / saveExtras(weekKey, items)
 
-import { seedFoods, seedTemplates, seedSchedule } from './seed.js';
+import { seedFoods, seedTemplates, seedTargets } from './seed.js';
 import { stampFirst } from './gasStore.js';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -26,7 +29,7 @@ function seedVariants() {
 export function createMockStore(seed = {}) {
   const foods = clone(seed.foods ?? seedFoods);
   let variants = clone(seed.variants ?? seedVariants());
-  let schedule = clone(seed.schedule ?? seedSchedule);
+  let targets = clone(seed.targets ?? seedTargets);
   const logs = clone(seed.logs ?? {});
   const extras = clone(seed.extras ?? {}); // { weekKey: [{nome}, ...] }
 
@@ -42,8 +45,8 @@ export function createMockStore(seed = {}) {
     },
     async deleteVariant(id) { variants = variants.filter((x) => x.id !== id); },
 
-    async getSchedule() { return clone(schedule); },
-    async saveSchedule(next) { schedule = clone(next); return clone(schedule); },
+    async getTargets() { return clone(targets); },
+    async saveTargets(next) { targets = clone(next); return clone(targets); },
 
     async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
     async saveLog(log) { const s = stampFirst(log); logs[s.data] = clone(s); return clone(s); },

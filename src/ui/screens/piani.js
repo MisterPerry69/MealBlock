@@ -112,15 +112,21 @@ function renderTarget(root, ctx) {
   const varianti = ctx.variantsOf(targetCat);
   const grid = el('div', { class: 'target-grid' });
 
-  // prima card: kcal/macro target del programma, editabili inline
-  grid.append(targetHeaderCard(targetCat, varianti, ctx));
+  // prima card: kcal/macro target della CATEGORIA (unico per ON, unico per
+  // OFF), editabili inline. Condiviso da tutti i piani sotto.
+  grid.append(targetHeaderCard(targetCat, ctx));
 
   for (const v of varianti) {
     const m = logMacros({ meals: v.meals }, ctx.foods);
     grid.append(el('div', { class: 'target-card' }, [
       el('button', { class: 'target-card__body', onClick: () => ctx.openBanco(v.id) }, [
         el('div', { class: 'target-card__name', text: v.nome }),
-        el('div', { class: 'target-card__macro', text: `${round(m.kcal)} / ${v.target.kcal} kcal` }),
+        el('div', { class: 'target-card__macro' }, [
+          `${round(m.kcal)} kcal · `,
+          el('span', { class: 'mc mc--c', text: `${round(m.carbo)}C ` }),
+          el('span', { class: 'mc mc--p', text: `${round(m.prot)}P ` }),
+          el('span', { class: 'mc mc--f', text: `${round(m.fat)}F` }),
+        ]),
       ]),
       el('div', { class: 'variant-tools' }, [
         el('button', { class: 'vt', 'aria-label': 'Rinomina', html: icon.pencil(15), onClick: () => ctx.renameVariant(v.id) }),
@@ -138,9 +144,8 @@ function renderTarget(root, ctx) {
   root.append(grid);
 }
 
-function targetHeaderCard(cat, varianti, ctx) {
-  const base = varianti[0];
-  const target = base?.target || { kcal: 0, carbo: 0, prot: 0, fat: 0 };
+function targetHeaderCard(cat, ctx) {
+  const target = ctx.targets[cat];
 
   const field = (key, label) => {
     const input = el('input', {
@@ -152,8 +157,7 @@ function targetHeaderCard(cat, varianti, ctx) {
       const n = raw === '' ? Number(input.dataset.prev || 0) : parseFloat(raw.replace(',', '.'));
       const val = Number.isFinite(n) ? Math.max(0, n) : 0;
       input.value = String(val);
-      if (!base) return;
-      if (val !== target[key]) ctx.setVariantTarget(base.id, { ...base.target, [key]: val });
+      if (val !== target[key]) ctx.setCategoryTarget(cat, { ...target, [key]: val });
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });

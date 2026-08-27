@@ -16,10 +16,11 @@ export const seedFoods = {
 // Due giornate-tipo: ON (piu carbo, meno grassi) e OFF (meno carbo, piu grassi).
 // Ogni pasto ha righe {foodId, grammatura}. Le grammature sono un punto di
 // partenza: il motore le aggiusta entro range quando qualcosa cambia.
+// NIENTE target qui: il target e per CATEGORIA (vedi seedTargets), condiviso
+// da tutti i piani della stessa categoria, non duplicato per piano.
 export const seedTemplates = {
   ON: {
     tipo: 'ON',
-    target: { kcal: 1620, carbo: 145, prot: 180, fat: 32 },
     meals: [
       { id: 'colazione', nome: 'Colazione', righe: [
         { foodId: 'avena', grammatura: 80 },
@@ -41,7 +42,6 @@ export const seedTemplates = {
   },
   OFF: {
     tipo: 'OFF',
-    target: { kcal: 1245, carbo: 12, prot: 155, fat: 64 },
     meals: [
       { id: 'colazione', nome: 'Colazione', righe: [
         { foodId: 'uovo', grammatura: 150 },
@@ -62,8 +62,9 @@ export const seedTemplates = {
   },
 };
 
-// Schema settimanale: lun-mar-mer-gio-ven-sab-dom. ON = allenamento.
-// Placeholder: 3 ON / 4 OFF. Lo cambierai dalle impostazioni.
-export const seedSchedule = {
-  mappa: { lun: 'ON', mar: 'OFF', mer: 'ON', gio: 'OFF', ven: 'ON', sab: 'OFF', dom: 'OFF' },
+// Target kcal/macro per categoria: UNICO per ON, UNICO per OFF. Condiviso da
+// tutti i piani della categoria (modificarlo cambia il numero visto ovunque).
+export const seedTargets = {
+  ON:  { kcal: 1620, carbo: 145, prot: 180, fat: 32 },
+  OFF: { kcal: 1245, carbo: 12,  prot: 155, fat: 64 },
 };

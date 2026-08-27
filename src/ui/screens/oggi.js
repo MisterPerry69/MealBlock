@@ -17,7 +17,7 @@ const mealIconKey = (id) => MEAL_IC[id] || 'spuntino';
 export function renderOggi(root, ctx) {
   const { log } = ctx.today;
   if (!log) { renderEmptyToday(root, ctx); return; }
-  const { foods, template } = ctx.today;
+  const { foods } = ctx.today;
   const sgarro = isSgarroDay(log);
   const on = (sgarro ? (log.tipoBase || 'ON') : log.tipo) === 'ON';
 
@@ -37,7 +37,7 @@ export function renderOggi(root, ctx) {
     el('span', { html: icon.plus(16) }), 'Fuori piano',
   ]));
 
-  const target = sgarro ? sgarroTarget(log, foods) : (template ? template.target : { kcal: 0, carbo: 0, prot: 0, fat: 0 });
+  const target = sgarro ? sgarroTarget(log, foods) : (log.target || { kcal: 0, carbo: 0, prot: 0, fat: 0 });
   // in modalita modifica mostro il TOTALE della giornata (come nei piani), cosi
   // vedo dove arriva il piano mentre modifico; altrimenti mostro il MANGIATO.
   const shown = ctx.editMode ? logMacros(log, foods) : eatenMacros(log, foods);

@@ -9,12 +9,13 @@ const foods = {
 
 const template = {
   tipo: 'ON',
-  target: { kcal: 1000, carbo: 100, prot: 100, fat: 20 },
   meals: [
     { id: 'pranzo', nome: 'Pranzo', righe: [{ foodId: 'pollo', grammatura: 200 }] },
     { id: 'cena',   nome: 'Cena',   righe: [{ foodId: 'riso',  grammatura: 100 }] },
   ],
 };
+const targetON = { kcal: 1000, carbo: 100, prot: 100, fat: 20 };
+const targetOFF = { kcal: 800, carbo: 20, prot: 120, fat: 30 };
 
 test('weekdayKey mappa una data ISO alla chiave giorno (lun..dom)', () => {
   // 2026-07-27 e un lunedi.
@@ -24,10 +25,11 @@ test('weekdayKey mappa una data ISO alla chiave giorno (lun..dom)', () => {
 
 test('buildLog crea un log dal template, con pranzo lavorativo bloccato di default', () => {
   // 2026-07-27 = lunedi (giorno lavorativo) -> pranzo bloccato.
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
 
   assert.equal(log.data, '2026-07-27');
   assert.equal(log.tipo, 'ON');
+  assert.deepEqual(log.target, targetON); // il target e copiato nel log, non un riferimento al piano
   const pranzo = log.meals.find((m) => m.id === 'pranzo');
   const cena = log.meals.find((m) => m.id === 'cena');
   assert.equal(pranzo.righe[0].stato, 'bloccata'); // lavorativo -> default bloccato
@@ -36,29 +38,37 @@ test('buildLog crea un log dal template, con pranzo lavorativo bloccato di defau
 
 test('buildLog nel weekend non blocca il pranzo di default', () => {
   // 2026-07-26 = domenica.
-  const log = buildLog('2026-07-26', template);
+  const log = buildLog('2026-07-26', template, targetON);
   const pranzo = log.meals.find((m) => m.id === 'pranzo');
   assert.equal(pranzo.righe[0].stato, 'aperta');
 });
 
-test('switchDayType: cambia SOLO il tipo, i pasti restano identici', () => {
-  const log = buildLog('2026-07-27', template); // ON, pranzo pollo 200g bloccato, cena riso 100g aperta
-  const out = switchDayType(log, 'OFF');
+test('buildLog: il target del log e un clone, non condivide riferimento con quello passato', () => {
+  const log = buildLog('2026-07-27', template, targetON);
+  log.target.kcal = 999;
+  assert.equal(targetON.kcal, 1000); // l'originale non e stato mutato
+});
+
+test('switchDayType: cambia tipo E target, i pasti restano identici', () => {
+  const log = buildLog('2026-07-27', template, targetON); // ON, pranzo pollo 200g bloccato, cena riso 100g aperta
+  const out = switchDayType(log, 'OFF', targetOFF);
 
   assert.equal(out.tipo, 'OFF');
+  assert.deepEqual(out.target, targetOFF); // il target ora e quello OFF
   assert.deepEqual(out.meals, log.meals); // contenuto identico, nessuna ricostruzione dal template
   assert.notEqual(out, log); // nuovo oggetto, non mutazione in place
 });
 
 test('switchDayType: non muta il log originale', () => {
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
   const originalTipo = log.tipo;
-  switchDayType(log, 'OFF');
+  switchDayType(log, 'OFF', targetOFF);
   assert.equal(log.tipo, originalTipo); // il log passato resta invariato
+  assert.deepEqual(log.target, targetON); // idem per il target
 });
 
 test('markSgarroDay: blank canvas — stessi pasti ma svuotati', () => {
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
   const s = markSgarroDay(log, true);
   assert.equal(s.tipo, 'SGARRO');
   assert.equal(s.tipoBase, 'ON');
@@ -69,7 +79,7 @@ test('markSgarroDay: blank canvas — stessi pasti ma svuotati', () => {
 });
 
 test('markSgarroDay(false): ripristina pasti e tipo originali', () => {
-  const log = buildLog('2026-07-27', template); // ON, con alimenti
+  const log = buildLog('2026-07-27', template, targetON); // ON, con alimenti
   const s = markSgarroDay(log, true);
   const back = markSgarroDay(s, false);
   assert.equal(back.tipo, 'ON');
@@ -79,20 +89,20 @@ test('markSgarroDay(false): ripristina pasti e tipo originali', () => {
 });
 
 test('dayStatus: non tracciato se nessun cibo spuntato', () => {
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
   assert.equal(dayStatus(log, foods).stato, 'vuoto');
 });
 
 test('dayStatus: sgarro se giornata SGARRO o ha righe sgarro', () => {
-  const s = markSgarroDay(buildLog('2026-07-27', template), true);
+  const s = markSgarroDay(buildLog('2026-07-27', template, targetON), true);
   assert.equal(dayStatus(s, foods).stato, 'sgarro');
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
   log.meals[0].righe.push({ foodId: 'pollo', grammatura: 100, stato: 'bloccata', isSgarro: true, eaten: true });
   assert.equal(dayStatus(log, foods).stato, 'sgarro');
 });
 
 test('dayStatus: completo se ho spuntato qualcosa e nessuno sgarro', () => {
-  const log = buildLog('2026-07-27', template);
+  const log = buildLog('2026-07-27', template, targetON);
   log.meals[0].righe[0].eaten = true;
   assert.equal(dayStatus(log, foods).stato, 'ok');
 });

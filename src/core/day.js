@@ -28,15 +28,20 @@ export function weekDays(dateISO) {
 }
 
 /**
- * Crea un Log a partire da un DayTemplate per una data.
+ * Crea un Log a partire da un DayTemplate per una data. Il target NON viene
+ * dal template (i piani non ne hanno uno proprio): va passato esplicitamente
+ * dal chiamante (il target della categoria, es. state.targets[tipo]) e viene
+ * copiato nel log — da quel momento e un valore del giorno, indipendente dal
+ * piano collegato.
  * Ogni riga riceve uno stato: il pranzo dei giorni lavorativi nasce 'bloccata'
  * (cucinato la sera prima), tutto il resto 'aperta'.
  */
-export function buildLog(dateISO, template) {
+export function buildLog(dateISO, template, target) {
   const isWorkday = WORKDAYS.has(weekdayKey(dateISO));
   return {
     data: dateISO,
     tipo: template.tipo,
+    target: { ...target },
     meals: template.meals.map((meal) => ({
       id: meal.id,
       nome: meal.nome,
@@ -95,11 +100,12 @@ export function markSgarroDay(log, attiva) {
 }
 
 /**
- * Cambia il TIPO di un log (ON<->OFF). Cambia solo `tipo`: i pasti restano
+ * Cambia il TIPO (e il TARGET) di un log (ON<->OFF). I pasti restano
  * esattamente quelli che c'erano, li aggiusti tu a mano verso il nuovo
- * target (o con Ricalcola). Non mutare mai i piani salvati da Settimana.
- * Restituisce un nuovo log (non muta quello passato).
+ * target. Non aggancia il giorno a nessun piano: resta "in stasi" finche non
+ * lo salvi esplicitamente come piano. Restituisce un nuovo log (non muta
+ * quello passato).
  */
-export function switchDayType(log, nextTipo) {
-  return { ...log, tipo: nextTipo };
+export function switchDayType(log, nextTipo, nextTarget) {
+  return { ...log, tipo: nextTipo, target: { ...nextTarget } };
 }

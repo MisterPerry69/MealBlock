@@ -248,7 +248,6 @@ export function openPlanPicker({ variants, onPick }) {
           el('span', { class: `chip chip--${v.categoria === 'ON' ? 'on' : 'off'}`, text: v.categoria }),
           el('span', { class: 'item__title', text: v.nome }),
         ]),
-        el('span', { class: 'item__meta', text: `${v.target.kcal} kcal` }),
       ])));
       return el('div', {}, [list]);
     },

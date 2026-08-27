@@ -6,8 +6,8 @@ import { renderTracker } from './tracker.js';
 import { createMockStore } from '../data/store.js';
 import { createGasStore } from '../data/gasStore.js';
 import { GAS_URL } from '../data/config.js';
-import { seedFoods, seedTemplates, seedSchedule } from '../data/seed.js';
-import { buildLog, switchDayType, markSgarroDay, isSgarroDay, weekDays } from '../core/day.js';
+import { seedFoods, seedTemplates, seedTargets } from '../data/seed.js';
+import { buildLog, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
 import { computeUsage, suggestGrams, rankFoodsForMeal } from '../core/usage.js';
 import { logMacros, eatenMacros } from './format.js';
 import { renderOggi } from './screens/oggi.js';
@@ -24,9 +24,9 @@ const store = GAS_URL ? createGasStore(GAS_URL) : createMockStore();
 const state = {
   tab: 'oggi',
   foods: {},
-  variants: [],    // tutte le varianti (ON e OFF), ognuna e un template completo
-  schedule: null,
-  today: null,     // { log, foods, template }
+  variants: [],    // tutti i piani (ON e OFF): { id, nome, categoria, meals }
+  targets: { ON: { kcal: 0, carbo: 0, prot: 0, fat: 0 }, OFF: { kcal: 0, carbo: 0, prot: 0, fat: 0 } },
+  today: null,     // { log, foods }
   history: [],
   banco: null,     // { plan, foods } quando il banco da lavoro e aperto
   editMode: false, // modalita modifica giornata in Oggi
@@ -43,11 +43,6 @@ function todayISO() {
 // ---- helper piani ----
 function variantsOf(categoria) { return state.variants.filter((v) => v.categoria === categoria); }
 function variantById(id) { return state.variants.find((v) => v.id === id); }
-// il piano applicato a un log (via log.variantId). Nessun fallback implicito:
-// se il piano non esiste piu (o non e mai stato assegnato), torna null.
-function variantForLog(log) {
-  return log.variantId ? (variantById(log.variantId) || null) : null;
-}
 
 async function loadToday() {
   const iso = todayISO();
@@ -58,7 +53,7 @@ async function loadToday() {
   if (log && log.cleared) log = null; // giorno svuotato da Settimana: torna vuoto
   // Nessuna auto-creazione: se il giorno non ha un piano assegnato, Oggi mostra
   // il selettore rapido ON/OFF (vedi renderOggi) finche l'utente non ne sceglie uno.
-  state.today = { log, foods: state.foods, template: log ? variantForLog(log) : null };
+  state.today = { log, foods: state.foods };
 }
 
 // ---- salvataggio del log sul backend (unica fonte di verita, condivisa tra
@@ -137,23 +132,23 @@ function persistToday() {
   queueSaveLog(state.today.log);
 }
 
-// target vuoto di sicurezza: usato quando un log punta a un piano che non
-// esiste piu (es. eliminato mentre era assegnato a un giorno).
+// target vuoto di sicurezza: usato quando un log molto vecchio non ha ancora
+// un `target` proprio (salvato prima di questa modifica).
 function emptyTarget() { return { kcal: 0, carbo: 0, prot: 0, fat: 0 }; }
 
 // aggiorna SOLO il tracker di Oggi (senza ricostruire la lista/gli input): usato
 // mentre si digita una grammatura in modifica, per non chiudere la tastiera.
 function refreshTrackerToday() {
-  const { log, foods, template } = state.today;
+  const { log, foods } = state.today;
   if (isSgarroDay(log)) return;
   const shown = state.editMode ? logMacros(log, foods) : eatenMacros(log, foods);
-  renderTracker(shown, template ? template.target : emptyTarget());
+  renderTracker(shown, log.target || emptyTarget());
 }
 
 // aggiorna solo il tracker del banco (totale del piano vs target) senza render
 function refreshTrackerBanco() {
-  const { plan } = state.banco;
-  renderTracker(logMacros({ meals: plan.meals }, state.foods), plan.target);
+  const { plan, target } = state.banco;
+  renderTracker(logMacros({ meals: plan.meals }, state.foods), target);
 }
 
 // ---- azioni passate alle schermate via ctx ----
@@ -164,9 +159,12 @@ const ctx = {
   rerender: () => render(),
   // varianti
   variantsOf: (cat) => variantsOf(cat),
-  variantForLog: (log) => variantForLog(log),
+  get targets() { return state.targets; },
 
   // cambia SOLO tipo/target del giorno (i cibi restano quelli che erano).
+  // Il target viene da state.targets[categoria] (unico per categoria, non dal
+  // piano collegato): il giorno resta "in stasi", non agganciato a nessun
+  // piano nuovo, finche non lo salvi esplicitamente (icona floppy nel banco).
   // enterEdit: dopo il cambio entra subito in modalita modifica, dato che i
   // macro sono cambiati e quasi certamente ci sara qualcosa da aggiustare.
   toggleDayType(enterEdit = false) {
@@ -174,9 +172,8 @@ const ctx = {
     const base = isSgarroDay(log) ? (log.tipoBase || 'ON') : log.tipo;
     const nuovoTipo = base === 'ON' ? 'OFF' : 'ON';
     let next = isSgarroDay(log) ? markSgarroDay(log, false) : log;
-    next = switchDayType(next, nuovoTipo);
+    next = switchDayType(next, nuovoTipo, state.targets[nuovoTipo]);
     state.today.log = next;
-    state.today.template = variantForLog(next);
     if (enterEdit) state.editMode = true;
     persistToday();
   },
@@ -252,7 +249,6 @@ const ctx = {
     const id = categoria.toLowerCase() + '-' + Date.now();
     const nuovo = {
       id, nome: 'Nuovo piano', categoria,
-      target: { kcal: 0, carbo: 0, prot: 0, fat: 0 },
       meals: [
         { id: 'colazione', nome: 'Colazione', righe: [] },
         { id: 'pranzo', nome: 'Pranzo', righe: [] },
@@ -294,13 +290,13 @@ const ctx = {
     saveInBackground(() => store.deleteVariant(variantId));
   },
 
-  // modifica diretta di kcal/macro target di una variante (tab Target)
-  async setVariantTarget(variantId, target) {
-    const v = variantById(variantId);
-    if (!v) return;
-    await store.saveVariant({ ...v, target });
-    state.variants = await store.getVariants();
+  // modifica diretta di kcal/macro target di una CATEGORIA (tab Target).
+  // Unico per ON, unico per OFF: aggiorna il numero visto da ogni piano di
+  // quella categoria, senza doverli toccare uno a uno.
+  async setCategoryTarget(categoria, target) {
+    state.targets = { ...state.targets, [categoria]: target };
     render();
+    saveInBackground(() => store.saveTargets(state.targets));
   },
 
   // ---- modifica giornata (matita in Oggi) ----
@@ -389,14 +385,16 @@ const ctx = {
     saveInBackground(() => store.saveExtras(weekKey, items));
   },
 
-  // assegna una variante a un giorno: crea (o sostituisce) il log di quella data
+  // assegna un piano a un giorno: crea (o sostituisce) il log di quella data.
+  // Il target del log viene da state.targets[categoria] (il piano non ne ha
+  // uno proprio).
   assignPlanToDay(dateISO, variantId) {
     const tpl = variantById(variantId);
     if (!tpl) return;
-    const log = buildLog(dateISO, tpl);
+    const log = buildLog(dateISO, tpl, state.targets[tpl.categoria]);
     log.variantId = tpl.id;
     saveLogReliable(log); // aggiorna history + backend
-    if (dateISO === todayISO()) state.today = { log, foods: state.foods, template: tpl };
+    if (dateISO === todayISO()) state.today = { log, foods: state.foods };
     render();
   },
 
@@ -424,27 +422,31 @@ const ctx = {
   // ---- banco da lavoro ----
   get banco() { return state.banco; },
 
-  // openBanco: apre un PIANO esistente per id.
+  // openBanco: apre un PIANO esistente per id. Il target mostrato/usato per
+  // Ricalcola nel banco viene da state.targets[categoria] (il piano non ne
+  // ha uno proprio).
   openBanco(id) {
     const tpl = variantById(id);
     if (!tpl) return;
-    state.banco = { plan: JSON.parse(JSON.stringify(tpl)), foods: state.foods };
+    state.banco = {
+      plan: JSON.parse(JSON.stringify(tpl)),
+      target: state.targets[tpl.categoria],
+      foods: state.foods,
+    };
     render({ resetScroll: true });
   },
 
-  // apre un giorno (log) nel banco per modificarlo indipendentemente dal piano
+  // apre un giorno (log) nel banco per modificarlo indipendentemente dal piano.
+  // Il target e quello PROPRIO del log (log.target), non del piano collegato:
+  // e cosi che un giorno "in stasi" (switchDayType) mantiene il suo target.
   openDayBanco(dateISO) {
     const log = state.history.find((l) => l.data === dateISO);
     if (!log) return;
-    const tpl = variantForLog(log);
-    // il "plan" del banco per un giorno: usa i pasti del log + il target del
-    // piano collegato (se il piano non esiste piu, ricade sul target del log
-    // stesso o su zero: non deve mai crashare).
-    const target = tpl ? tpl.target : (log.target || { kcal: 0, carbo: 0, prot: 0, fat: 0 });
     state.banco = {
       dayISO: dateISO,
-      plan: { id: log.variantId, nome: `${dateISO}`, tipo: log.tipo, target,
+      plan: { id: log.variantId, nome: `${dateISO}`, tipo: log.tipo,
         meals: JSON.parse(JSON.stringify(log.meals)) },
+      target: log.target || state.targets[log.tipo] || emptyTarget(),
       foods: state.foods,
     };
     render({ resetScroll: true });
@@ -455,8 +457,10 @@ const ctx = {
   saveBanco() {
     const b = state.banco;
     if (b.dayISO) {
-      // il banco sta modificando un GIORNO (log), non una variante: salva il log
-      const log = { data: b.dayISO, tipo: b.plan.tipo, variantId: b.plan.id, meals: JSON.parse(JSON.stringify(b.plan.meals)) };
+      // il banco sta modificando un GIORNO (log), non una variante: salva il
+      // log CON il suo target (mai perderlo: e cosi che uno switch ON/OFF
+      // resta visibile anche dopo aver modificato qualcosa nel banco).
+      const log = { data: b.dayISO, tipo: b.plan.tipo, target: { ...b.target }, variantId: b.plan.id, meals: JSON.parse(JSON.stringify(b.plan.meals)) };
       saveLogReliable(log);
       if (state.today && state.today.log.data === b.dayISO) state.today.log = log;
       return;
@@ -464,7 +468,6 @@ const ctx = {
     const plan = b.plan;
     const i = state.variants.findIndex((v) => v.id === plan.id);
     if (i >= 0) state.variants[i] = JSON.parse(JSON.stringify(plan));
-    if (state.today && state.today.log.variantId === plan.id) state.today.template = plan;
     saveInBackground(() => store.saveVariant(plan));
   },
 
@@ -510,6 +513,8 @@ const ctx = {
 
   // Salva il giorno corrente del banco come nuovo piano riutilizzabile
   // (icona floppy, solo per il banco di un GIORNO, non di un piano di libreria).
+  // Il piano nasce SENZA target proprio (i piani non ne hanno): il target
+  // resta quello del giorno (log.target), invariato.
   bancoSaveAsPlan() {
     const b = state.banco;
     if (!b.dayISO) return; // ha senso solo modificando un giorno
@@ -519,11 +524,12 @@ const ctx = {
         id: m.id, nome: m.nome,
         righe: m.righe.map((r) => ({ foodId: r.foodId, grammatura: r.grammatura })),
       }));
-      const nuovo = { id, nome, categoria: b.plan.tipo, target: { ...b.plan.target }, meals };
+      const nuovo = { id, nome, categoria: b.plan.tipo, meals };
       await store.saveVariant(nuovo);
       state.variants = await store.getVariants();
       // il giorno resta collegato al piano appena creato
       b.plan.id = id;
+      b.plan.nome = nome;
       ctx.saveBanco();
       render();
     }});
@@ -572,14 +578,14 @@ function wireTabs() {
 }
 
 // Al primo avvio con un backend vuoto, semina i dati di esempio.
-// Con lo store mock i seed (foods, varianti, schedule) sono gia dentro.
+// Con lo store mock i seed (foods, varianti, target) sono gia dentro.
 async function seedIfEmpty() {
   const variants = await store.getVariants();
   if (variants && variants.length) return;
   for (const id of Object.keys(seedFoods)) await store.saveFood(seedFoods[id]);
   await store.saveVariant({ id: 'on-standard', nome: 'Giorno ON', categoria: 'ON', ...seedTemplates.ON });
   await store.saveVariant({ id: 'off-standard', nome: 'Giorno OFF', categoria: 'OFF', ...seedTemplates.OFF });
-  await store.saveSchedule(seedSchedule);
+  await store.saveTargets(seedTargets);
 }
 
 function hideLoader() {
@@ -606,7 +612,7 @@ async function boot() {
     await seedIfEmpty();
     state.foods = await store.getFoods();
     state.variants = await store.getVariants();
-    state.schedule = await store.getSchedule();
+    state.targets = await store.getTargets();
     state.history = (await store.getLogs?.()) || [];
     await loadToday();
     wireTabs();
