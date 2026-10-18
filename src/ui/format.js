@@ -1,8 +1,7 @@
 // format.js — helper di presentazione condivisi.
 
 import { macrosOfRows } from '../core/solver.js';
-
-const MACROS = ['kcal', 'carbo', 'prot', 'fat'];
+import { weekdayKey } from '../core/day.js';
 
 // foods dello store hanno .per100g; il solver vuole valori piatti.
 export function flatFoods(foods) {
@@ -39,6 +38,21 @@ export function eatenMacros(log, foods) {
 
 export const round = (n) => Math.round(n);
 
-export const macroLabels = { kcal: 'kcal', carbo: 'C', prot: 'P', fat: 'F' };
-export const macroUnit = { kcal: '', carbo: 'g', prot: 'g', fat: 'g' };
-export { MACROS };
+const DOW = { lun: 'Lunedì', mar: 'Martedì', mer: 'Mercoledì', gio: 'Giovedì', ven: 'Venerdì', sab: 'Sabato', dom: 'Domenica' };
+const MON = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+/** 'Lunedì 19 Ottobre' da una data ISO. */
+export function fmtDate(iso) { const [, m, d] = iso.split('-').map(Number); return `${DOW[weekdayKey(iso)]} ${d} ${MON[m - 1]}`; }
+
+/** Testo di un macro per la riga ('120 kcal', '30C'...) o per l'intestazione pasto. */
+export function macroText(k, v, head = false) {
+  const n = round(v);
+  if (k === 'kcal') return head ? `${n} ` : `${n} kcal`;
+  const l = { carbo: 'C', prot: 'P', fat: 'F' }[k];
+  return head ? `${n}${l} ` : `${n}${l}`;
+}
+
+/** Tipi di pasto (id usati nei piani e nei blocchi). */
+export const MEAL_TYPES = [
+  { id: 'colazione', nome: 'Colazione' }, { id: 'pranzo', nome: 'Pranzo' },
+  { id: 'spuntino', nome: 'Spuntino' }, { id: 'cena', nome: 'Cena' },
+];

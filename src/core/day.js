@@ -1,8 +1,7 @@
 // day.js — logica di dominio del "giorno": costruire il log dal template,
-// gestire blocchi/aperture, stato sgarro. Puro: nessuna dipendenza da DOM o storage.
+// stato sgarro. Puro: nessuna dipendenza da DOM o storage.
 
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
-const WORKDAYS = new Set(['lun', 'mar', 'mer', 'gio', 'ven']);
 
 /** Chiave giorno (lun..dom) da una data ISO 'YYYY-MM-DD'. */
 export function weekdayKey(dateISO) {
@@ -11,10 +10,13 @@ export function weekdayKey(dateISO) {
   return WEEKDAYS[date.getDay()];
 }
 
-function toISO(d) {
+export function toISO(d) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+
+/** Data odierna ISO (ora locale). */
+export function todayISO() { return toISO(new Date()); }
 
 /** I 7 giorni ISO (lunedi..domenica) della settimana che contiene dateISO. */
 export function weekDays(dateISO) {
@@ -33,14 +35,13 @@ export function weekDays(dateISO) {
  * dal chiamante (il target della categoria, es. state.targets[tipo]) e viene
  * copiato nel log — da quel momento e un valore del giorno, indipendente dal
  * piano collegato.
- * Ogni riga riceve uno stato: il pranzo dei giorni lavorativi nasce 'bloccata'
- * (cucinato la sera prima), tutto il resto 'aperta'.
+ * Il tipo (ON/OFF) e la categoria del piano; `tipo` resta come fallback per i
+ * piani di esempio che lo hanno ancora.
  */
 export function buildLog(dateISO, template, target) {
-  const isWorkday = WORKDAYS.has(weekdayKey(dateISO));
   return {
     data: dateISO,
-    tipo: template.tipo,
+    tipo: template.categoria || template.tipo,
     target: { ...target },
     meals: template.meals.map((meal) => ({
       id: meal.id,
@@ -48,7 +49,6 @@ export function buildLog(dateISO, template, target) {
       righe: meal.righe.map((r) => ({
         foodId: r.foodId,
         grammatura: r.grammatura,
-        stato: meal.id === 'pranzo' && isWorkday ? 'bloccata' : 'aperta',
         isSgarro: false,
       })),
     })),

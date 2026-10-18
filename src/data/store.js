@@ -13,6 +13,7 @@
 //   getTargets() / saveTargets(targets)   -> { ON:{...}, OFF:{...} }
 //   getLog(dateISO) / saveLog(log)
 //   getExtras(weekKey) / saveExtras(weekKey, items)
+//   getBlocks() / saveBlock(block) / deleteBlock(id)  -> pasti prefatti { id, nome, mealId, righe }
 
 import { seedFoods, seedTemplates, seedTargets } from './seed.js';
 import { stampFirst } from './gasStore.js';
@@ -32,6 +33,7 @@ export function createMockStore(seed = {}) {
   let targets = clone(seed.targets ?? seedTargets);
   const logs = clone(seed.logs ?? {});
   const extras = clone(seed.extras ?? {}); // { weekKey: [{nome}, ...] }
+  let blocks = clone(seed.blocks ?? []);
 
   return {
     async getFoods() { return clone(foods); },
@@ -51,6 +53,14 @@ export function createMockStore(seed = {}) {
     async getLog(dateISO) { return logs[dateISO] ? clone(logs[dateISO]) : null; },
     async saveLog(log) { const s = stampFirst(log); logs[s.data] = clone(s); return clone(s); },
     async getLogs() { return Object.values(clone(logs)).sort((a, b) => (a.data < b.data ? 1 : -1)); },
+
+    async getBlocks() { return clone(blocks); },
+    async saveBlock(b) {
+      const i = blocks.findIndex((x) => x.id === b.id);
+      if (i >= 0) blocks[i] = clone(b); else blocks.push(clone(b));
+      return clone(b);
+    },
+    async deleteBlock(id) { blocks = blocks.filter((x) => x.id !== id); },
 
     async getExtras(weekKey) { return clone(extras[weekKey] ?? []); },
     async saveExtras(weekKey, items) { extras[weekKey] = clone(items); return clone(items); },

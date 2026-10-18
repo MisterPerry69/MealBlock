@@ -96,3 +96,8 @@ test('redistribute bilancia due righe su piu macro (caso realistico)', () => {
     assert.ok(Math.abs(residual[m]) < 1, `residuo ${m} vicino a zero`);
   }
 });
+
+test('macrosOfRows ignora un cibo sconosciuto invece di lanciare', () => {
+  const m = macrosOfRows([{ foodId: 'sparito', grammatura: 100 }], {});
+  assert.deepEqual(m, { kcal: 0, carbo: 0, prot: 0, fat: 0 });
+});

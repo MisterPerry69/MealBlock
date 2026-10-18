@@ -19,6 +19,7 @@ export function macrosOfRows(rows, foods) {
   const total = { kcal: 0, carbo: 0, prot: 0, fat: 0 };
   for (const row of rows) {
     const food = foods[row.foodId];
+    if (!food) continue; // cibo non (ancora) caricato: non far crollare l'app
     const factor = row.grammatura / 100;
     for (const m of MACROS) {
       total[m] += food[m] * factor;

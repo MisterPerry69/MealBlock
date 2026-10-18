@@ -5,28 +5,31 @@ import { icon } from './icons.js';
 import { renderTracker } from './tracker.js';
 import { createMockStore } from '../data/store.js';
 import { createGasStore } from '../data/gasStore.js';
-import { GAS_URL } from '../data/config.js';
+import { GAS_URL, API_TOKEN } from '../data/config.js';
 import { seedFoods, seedTemplates, seedTargets } from '../data/seed.js';
-import { buildLog, switchDayType, markSgarroDay, isSgarroDay } from '../core/day.js';
+import { buildLog, switchDayType, markSgarroDay, isSgarroDay, todayISO, toISO } from '../core/day.js';
 import { computeUsage, suggestGrams, rankFoodsForMeal } from '../core/usage.js';
-import { logMacros, eatenMacros } from './format.js';
-import { renderOggi } from './screens/oggi.js';
+import { logMacros, eatenMacros, flatFoods, MEAL_TYPES } from './format.js';
+import { macrosOfRows } from '../core/solver.js';
+import { renderOggi, refreshOggiNumbers } from './screens/oggi.js';
 import { renderPiani } from './screens/piani.js';
-import { renderBanco } from './screens/banco.js';
+import { renderBanco, refreshBancoNumbers } from './screens/banco.js';
 import { renderRepertorio } from './screens/repertorio.js';
 import { renderStorico } from './screens/storico.js';
 import { renderSpesa } from './screens/spesa.js';
-import { openFoodForm, openSgarroForm, openRenameForm, openPlanPicker, openNewPlanChoice } from './modal.js';
+import { openFoodForm, openFoodPicker, openBlockForm, openRenameForm, openPlanPicker, openNewPlanChoice, openConfirm } from './modal.js';
 
 // Se hai incollato l'URL GAS in config.js usa il backend reale, altrimenti mock.
-const store = GAS_URL ? createGasStore(GAS_URL) : createMockStore();
+const store = GAS_URL ? createGasStore(GAS_URL, API_TOKEN) : createMockStore();
 
 const state = {
   tab: 'oggi',
   foods: {},
+  blocks: [],      // pasti prefatti: { id, nome, mealId, righe }
   variants: [],    // tutti i piani (ON e OFF): { id, nome, categoria, meals }
   targets: { ON: { kcal: 0, carbo: 0, prot: 0, fat: 0 }, OFF: { kcal: 0, carbo: 0, prot: 0, fat: 0 } },
   today: null,     // { log, foods }
+  todayDate: null, // giorno (ISO) per cui today e stato caricato
   history: [],
   banco: null,     // { plan, foods } quando il banco da lavoro e aperto
   editMode: false, // modalita modifica giornata in Oggi
@@ -34,18 +37,13 @@ const state = {
   extras: {},      // { weekKey: [{nome}, ...] } voci extra della spesa, per settimana
 };
 
-function todayISO() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 // ---- helper piani ----
 function variantsOf(categoria) { return state.variants.filter((v) => v.categoria === categoria); }
 function variantById(id) { return state.variants.find((v) => v.id === id); }
 
 async function loadToday() {
   const iso = todayISO();
+  state.todayDate = iso;
   // il log di oggi e gia tra i logs scaricati al boot (getAll): niente chiamata
   // extra. Solo se non c'e lo cerco puntualmente.
   let log = state.history.find((l) => l.data === iso) || null;
@@ -62,13 +60,19 @@ async function loadToday() {
 //      dicendo "salvato" senza scrivere). Semplice e affidabile.
 // Salvataggio SILENZIOSO in background con RETRY automatico: i GAS falliscono a
 // volte per timeout/richieste ravvicinate. Ritenta 2 volte (con piccola pausa)
-// prima di mostrare il badge d'errore cliccabile.
-function saveInBackground(doSave, tentativi = 2) {
+// prima di mostrare il badge d'errore cliccabile. I salvataggi vanno UNO ALLA
+// VOLTA, in ordine: due richieste in parallelo verso GAS possono arrivare
+// invertite e cancellare la modifica piu recente.
+let saveChain = Promise.resolve();
+function saveInBackground(doSave) {
   hideSaveError();
-  doSave().catch((e) => {
-    if (tentativi > 0) setTimeout(() => saveInBackground(doSave, tentativi - 1), 800);
-    else showSaveError(() => doSave());
-  });
+  const run = async (tentativi) => {
+    try { await doSave(); } catch (e) {
+      if (tentativi > 0) { await new Promise((r) => setTimeout(r, 800)); return run(tentativi - 1); }
+      showSaveError(() => doSave());
+    }
+  };
+  saveChain = saveChain.then(() => run(2));
 }
 
 function saveLogReliable(log) {
@@ -91,13 +95,19 @@ function showSaveError(retry) {
   box.textContent = '⚠ Non salvato — tocca per riprovare';
   box.onclick = () => { box.textContent = '⌛ salvo…'; retry().then(hideSaveError).catch(() => showSaveError(retry)); };
 }
+// conferma breve (riusa il badge dei salvataggi)
+function showSaved(msg) {
+  let box = document.getElementById('savestatus');
+  if (!box) { box = document.createElement('div'); box.id = 'savestatus'; document.body.appendChild(box); }
+  box.className = 'savestatus is-ok';
+  box.textContent = msg;
+  box.onclick = null;
+  setTimeout(() => { if (box.className === 'savestatus is-ok') box.className = 'savestatus is-hidden'; }, 1800);
+}
 function hideSaveError() {
   const box = document.getElementById('savestatus');
   if (box) box.className = 'savestatus is-hidden';
 }
-
-function queueSaveLog(log) { saveLogReliable(log); }
-function installSaveGuards() { /* niente flush/beacon: salviamo gia a ogni azione */ }
 
 // statistiche d'uso calcolate dallo storico (per suggerimenti cibo/grammatura)
 function currentUsage() { return computeUsage(state.history || []); }
@@ -105,20 +115,26 @@ function currentUsage() { return computeUsage(state.history || []); }
 // apre il picker cibo con suggerimenti: cibi del pasto in cima + grammatura
 // precompilata. onAdd riceve una LISTA di { foodId, grammatura } (1 elemento in
 // modalita singola, N in modalita selezione multipla).
-function openSmartPicker({ mealId, onAdd }) {
+function openSmartPicker({ mealId, onAdd, withBlocks = true }) {
   const usage = currentUsage();
   const ordered = rankFoodsForMeal(Object.values(state.foods), usage, mealId);
   const foodsOrdered = {};
   for (const f of ordered) foodsOrdered[f.id] = f;
   // grammatura per un cibo aggiunto in multi: ultima usata, o 100 di default
   const gramFor = (foodId) => suggestGrams(usage, foodId, mealId) || 100;
-  openSgarroForm({
+  // blocchi del tipo di pasto, con le kcal calcolate; poi i cibi sfusi
+  const flat = flatFoods(state.foods);
+  const blocks = withBlocks
+    ? state.blocks.filter((b) => b.mealId === mealId && b.righe.length)
+        .map((b) => ({ ...b, kcal: macrosOfRows(b.righe, flat).kcal }))
+    : [];
+  openFoodPicker({
     foods: foodsOrdered,
+    blocks,
+    mealNome: MEAL_TYPES.find((m) => m.id === mealId)?.nome || '',
+    onConfirmBlock: (block) => onAdd(block.righe.map((r) => ({ foodId: r.foodId, grammatura: r.grammatura }))),
     suggestGram: (foodId) => suggestGrams(usage, foodId, mealId),
-    onCreateFood: (data) => {
-      const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
-      state.foods[id] = { id, ...data }; store.saveFood(state.foods[id]); return id;
-    },
+    onCreateFood: (data) => ctx.createFood(data),
     onConfirm: ({ foodId, grammatura }) => onAdd([{ foodId, grammatura }]),
     onConfirmMulti: (foodIds) => onAdd(foodIds.map((foodId) => ({ foodId, grammatura: gramFor(foodId) }))),
   });
@@ -129,7 +145,7 @@ function openSmartPicker({ mealId, onAdd }) {
 // Il cambio giorno/piano non deve toccare le grammature.
 function persistToday() {
   render();
-  queueSaveLog(state.today.log);
+  saveLogReliable(state.today.log);
 }
 
 // target vuoto di sicurezza: usato quando un log molto vecchio non ha ancora
@@ -148,6 +164,7 @@ function refreshTrackerToday() {
 // aggiorna solo il tracker del banco (totale del piano vs target) senza render
 function refreshTrackerBanco() {
   const { plan, target } = state.banco;
+  if (!target) return; // editor di un blocco: niente target
   renderTracker(logMacros({ meals: plan.meals }, state.foods), target);
 }
 
@@ -185,27 +202,22 @@ const ctx = {
     persistToday();
   },
 
-  async toggleMealLock(mealId) {
-    const meal = state.today.log.meals.find((m) => m.id === mealId);
-    const locked = meal.righe.every((r) => r.stato === 'bloccata');
-    meal.righe.forEach((r) => (r.stato = locked ? 'aperta' : 'bloccata'));
-    persistToday();
-  },
-
   toggleEaten(mealId, row) {
     // Spuntare "mangiato" fa avanzare le barre: aggiorna la UI SUBITO e salva in
     // background (niente attesa dei 2-4s del backend).
     row.eaten = !row.eaten;
     render();
-    queueSaveLog(state.today.log);
+    saveLogReliable(state.today.log);
   },
 
-  // crea un cibo nel repertorio, ritorna il suo id
-  async createFood(data) {
+  // crea un cibo nel repertorio, ritorna il suo id. Il salvataggio va in coda
+  // con retry e badge d'errore: un cibo non salvato farebbe puntare i log a un
+  // cibo che al prossimo avvio non esiste.
+  createFood(data) {
     const id = data.nome.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now();
     const food = { id, ...data }; // include per100g, rangeGrammatura, accessorio
     state.foods[id] = food;
-    await store.saveFood(food);
+    saveInBackground(() => store.saveFood(food));
     return id;
   },
 
@@ -215,22 +227,22 @@ const ctx = {
       mealId: meal.id,
       onAdd: (items) => {
         for (const { foodId, grammatura } of items)
-          meal.righe.push({ foodId, grammatura, stato: 'bloccata', isSgarro: true, eaten: true });
+          meal.righe.push({ foodId, grammatura, isSgarro: true, eaten: true });
         persistToday();
       },
     });
   },
 
   addFood() {
-    openFoodForm({ onSave: async (data) => { await ctx.createFood(data); render(); } });
+    openFoodForm({ onSave: (data) => { ctx.createFood(data); render(); } });
   },
 
 
   editFood(id) {
     const food = state.foods[id];
-    openFoodForm({ food, onSave: async (data) => {
+    openFoodForm({ food, onSave: (data) => {
       state.foods[id] = { id, ...data };
-      await store.saveFood(state.foods[id]);
+      saveInBackground(() => store.saveFood(state.foods[id]));
       render();
     }});
   },
@@ -307,6 +319,7 @@ const ctx = {
   replaceFood(mealId, rowIndex) {
     openSmartPicker({
       mealId,
+      withBlocks: false, // sostituire una riga = un solo cibo
       onAdd: (items) => {
         const { foodId, grammatura } = items[0]; // sostituzione = un solo cibo
         const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
@@ -322,20 +335,14 @@ const ctx = {
     // NON fare render() completo (chiuderebbe la tastiera). Aggiorno SOLO il
     // tracker cosi i macro si muovono in tempo reale mentre digiti.
     refreshTrackerToday();
-    queueSaveLog(state.today.log);
-  },
-
-  toggleRowLock(mealId, rowIndex) {
-    const row = state.today.log.meals.find((m) => m.id === mealId).righe[rowIndex];
-    row.locked = !row.locked;
-    render();
-    queueSaveLog(state.today.log);
+    refreshOggiNumbers(state.today.log, state.foods);
+    saveLogReliable(state.today.log);
   },
 
   removeRow(mealId, rowIndex) {
     state.today.log.meals.find((m) => m.id === mealId).righe.splice(rowIndex, 1);
     render();
-    queueSaveLog(state.today.log);
+    saveLogReliable(state.today.log);
   },
 
   addRowToMeal(mealId) {
@@ -344,7 +351,7 @@ const ctx = {
       onAdd: (items) => {
         const meal = state.today.log.meals.find((m) => m.id === mealId);
         for (const { foodId, grammatura } of items)
-          meal.righe.push({ foodId, grammatura, stato: 'aperta', isSgarro: false, eaten: false });
+          meal.righe.push({ foodId, grammatura, isSgarro: false, eaten: false });
         persistToday();
       },
     });
@@ -355,9 +362,7 @@ const ctx = {
   shiftWeek(deltaDays) {
     const base = state.weekRef || todayISO();
     const [y, m, d] = base.split('-').map(Number);
-    const nd = new Date(y, m - 1, d + deltaDays);
-    const p = (n) => String(n).padStart(2, '0');
-    state.weekRef = `${nd.getFullYear()}-${p(nd.getMonth() + 1)}-${p(nd.getDate())}`;
+    state.weekRef = toISO(new Date(y, m - 1, d + deltaDays));
     render({ resetScroll: true });
   },
   // log gia salvato per una data (dallo storico in memoria)
@@ -415,6 +420,7 @@ const ctx = {
   // rimuove il log assegnato a un giorno futuro (svuota lo slot)
   clearDay(dateISO) {
     state.history = state.history.filter((l) => l.data !== dateISO);
+    if (state.today?.log?.data === dateISO) state.today = { log: null, foods: state.foods };
     saveInBackground(() => store.saveLog({ data: dateISO, cleared: true, meals: [] }));
     render();
   },
@@ -442,11 +448,14 @@ const ctx = {
   openDayBanco(dateISO) {
     const log = state.history.find((l) => l.data === dateISO);
     if (!log) return;
+    // il nome mostrato e quello del piano collegato (non la data): se il
+    // giorno non ha un piano, il nome e "Giorno ON/OFF"
+    const tipo = log.tipo || variantById(log.variantId)?.categoria || 'ON';
     state.banco = {
       dayISO: dateISO,
-      plan: { id: log.variantId, nome: `${dateISO}`, tipo: log.tipo,
+      plan: { id: log.variantId, nome: variantById(log.variantId)?.nome || `Giorno ${tipo}`, tipo,
         meals: JSON.parse(JSON.stringify(log.meals)) },
-      target: log.target || state.targets[log.tipo] || emptyTarget(),
+      target: log.target || state.targets[tipo] || emptyTarget(),
       foods: state.foods,
     };
     render({ resetScroll: true });
@@ -456,13 +465,23 @@ const ctx = {
   // Aggiorna anche la variante in memoria e, se e la variante di oggi, la giornata.
   saveBanco() {
     const b = state.banco;
+    if (b.blockId) {
+      const m = b.plan.meals[0];
+      const block = { id: b.blockId, nome: b.plan.nome, mealId: m.id, righe: m.righe.map((r) => ({ foodId: r.foodId, grammatura: r.grammatura })) };
+      const i = state.blocks.findIndex((x) => x.id === block.id);
+      if (i >= 0) state.blocks[i] = block;
+      saveInBackground(() => store.saveBlock(block));
+      return;
+    }
     if (b.dayISO) {
       // il banco sta modificando un GIORNO (log), non una variante: salva il
       // log CON il suo target (mai perderlo: e cosi che uno switch ON/OFF
       // resta visibile anche dopo aver modificato qualcosa nel banco).
-      const log = { data: b.dayISO, tipo: b.plan.tipo, target: { ...b.target }, variantId: b.plan.id, meals: JSON.parse(JSON.stringify(b.plan.meals)) };
+      // parte dal log esistente: cosi non perde campi come tipoBase/mealsBase (sgarro)
+      const orig = state.history.find((l) => l.data === b.dayISO) || {};
+      const log = { ...orig, data: b.dayISO, tipo: b.plan.tipo, target: { ...b.target }, variantId: b.plan.id, meals: JSON.parse(JSON.stringify(b.plan.meals)) };
       saveLogReliable(log);
-      if (state.today && state.today.log.data === b.dayISO) state.today.log = log;
+      if (state.today?.log?.data === b.dayISO) state.today.log = log;
       return;
     }
     const plan = b.plan;
@@ -471,13 +490,60 @@ const ctx = {
     saveInBackground(() => store.saveVariant(plan));
   },
 
+  // ---- blocchi (pasti prefatti) ----
+  get blocks() { return state.blocks; },
+
+  createBlock() {
+    openBlockForm({ onCreate: ({ nome, mealId }) => {
+      const block = { id: 'blk-' + Date.now(), nome, mealId, righe: [] };
+      state.blocks.push(block);
+      saveInBackground(() => store.saveBlock(block));
+      ctx.openBlockBanco(block.id);
+    }});
+  },
+
+  // l'editor di un blocco riusa il banco: un solo "pasto" del tipo del blocco
+  openBlockBanco(id) {
+    const b = state.blocks.find((x) => x.id === id);
+    if (!b) return;
+    state.banco = {
+      blockId: id,
+      plan: { id, nome: b.nome, meals: [{ id: b.mealId, nome: MEAL_TYPES.find((m) => m.id === b.mealId)?.nome || b.mealId, righe: JSON.parse(JSON.stringify(b.righe)) }] },
+      target: null,
+      foods: state.foods,
+    };
+    render({ resetScroll: true });
+  },
+
+  // tocco sul chip: passa al tipo di pasto successivo
+  bancoCycleBlockMeal() {
+    const m = state.banco.plan.meals[0];
+    const next = MEAL_TYPES[(MEAL_TYPES.findIndex((t) => t.id === m.id) + 1) % MEAL_TYPES.length];
+    m.id = next.id; m.nome = next.nome;
+    ctx.saveBanco();
+    render();
+  },
+
+  bancoDeleteBlock() {
+    const b = state.banco;
+    openConfirm({
+      title: 'Eliminare il blocco?', message: `"${b.plan.nome}" verrà eliminato definitivamente.`,
+      onConfirm: () => {
+        state.blocks = state.blocks.filter((x) => x.id !== b.blockId);
+        saveInBackground(() => store.deleteBlock(b.blockId));
+        ctx.bancoClose();
+      },
+    });
+  },
+
   bancoClose() { state.banco = null; render({ resetScroll: true }); },
 
   bancoSetGram(mealId, index, grammi) {
     const meal = state.banco.plan.meals.find((m) => m.id === mealId);
     meal.righe[index].grammatura = Math.max(0, grammi || 0);
-    // niente render() (chiuderebbe la tastiera): aggiorno solo il tracker + salvo
+    // niente render() (chiuderebbe la tastiera): aggiorno tracker e numeri sul posto
     refreshTrackerBanco();
+    refreshBancoNumbers(state.banco.plan, state.foods);
     ctx.saveBanco();
   },
 
@@ -489,12 +555,6 @@ const ctx = {
     }});
   },
 
-  bancoToggleLock(mealId, index) {
-    const r = state.banco.plan.meals.find((m) => m.id === mealId).righe[index];
-    r.locked = !r.locked;
-    ctx.saveBanco(); render();
-  },
-
   bancoRemove(mealId, index) {
     state.banco.plan.meals.find((m) => m.id === mealId).righe.splice(index, 1);
     ctx.saveBanco(); render();
@@ -503,6 +563,7 @@ const ctx = {
   bancoAddFood(mealId) {
     openSmartPicker({
       mealId,
+      withBlocks: !state.banco.blockId, // un blocco non contiene altri blocchi
       onAdd: (items) => {
         const meal = state.banco.plan.meals.find((m) => m.id === mealId);
         for (const { foodId, grammatura } of items) meal.righe.push({ foodId, grammatura });
@@ -511,28 +572,42 @@ const ctx = {
     });
   },
 
-  // Salva il giorno corrente del banco come nuovo piano riutilizzabile
-  // (icona floppy, solo per il banco di un GIORNO, non di un piano di libreria).
-  // Il piano nasce SENZA target proprio (i piani non ne hanno): il target
-  // resta quello del giorno (log.target), invariato.
-  bancoSaveAsPlan() {
+  // Cambia tipo (ON<->OFF) e target del giorno aperto nel banco; i cibi restano.
+  bancoToggleType() {
     const b = state.banco;
-    if (!b.dayISO) return; // ha senso solo modificando un giorno
-    openRenameForm({ value: '', onSave: async (nome) => {
-      const id = b.plan.tipo.toLowerCase() + '-' + Date.now();
-      const meals = b.plan.meals.map((m) => ({
-        id: m.id, nome: m.nome,
-        righe: m.righe.map((r) => ({ foodId: r.foodId, grammatura: r.grammatura })),
-      }));
-      const nuovo = { id, nome, categoria: b.plan.tipo, meals };
-      await store.saveVariant(nuovo);
-      state.variants = await store.getVariants();
-      // il giorno resta collegato al piano appena creato
-      b.plan.id = id;
-      b.plan.nome = nome;
-      ctx.saveBanco();
-      render();
-    }});
+    if (!b?.dayISO || b.plan.tipo === 'SGARRO') return;
+    b.plan.tipo = b.plan.tipo === 'ON' ? 'OFF' : 'ON';
+    b.target = { ...state.targets[b.plan.tipo] };
+    ctx.saveBanco();
+    render();
+  },
+
+  // Floppy del banco di un GIORNO: salva le modifiche nel piano collegato. Se il
+  // nome e stato cambiato (matita) o il tipo non coincide piu con quello del
+  // piano, crea invece un piano nuovo partendo da questa giornata.
+  bancoSave() {
+    const b = state.banco;
+    if (!b?.dayISO || b.plan.tipo === 'SGARRO') return;
+    const meals = b.plan.meals.map((m) => ({
+      id: m.id, nome: m.nome,
+      righe: m.righe.map((r) => ({ foodId: r.foodId, grammatura: r.grammatura })),
+    }));
+    const esistente = variantById(b.plan.id);
+    let piano, msg;
+    if (esistente && esistente.nome === b.plan.nome && esistente.categoria === b.plan.tipo) {
+      piano = { ...esistente, meals };
+      const i = state.variants.findIndex((v) => v.id === piano.id);
+      state.variants[i] = piano;
+      msg = `Piano "${piano.nome}" aggiornato`;
+    } else {
+      piano = { id: b.plan.tipo.toLowerCase() + '-' + Date.now(), nome: b.plan.nome, categoria: b.plan.tipo, meals };
+      state.variants.push(piano);
+      b.plan.id = piano.id; // il giorno resta collegato al piano appena creato
+      msg = `Nuovo piano "${piano.nome}" creato`;
+    }
+    saveInBackground(() => store.saveVariant(piano));
+    ctx.saveBanco();
+    showSaved(msg);
   },
 };
 
@@ -613,10 +688,11 @@ async function boot() {
     state.foods = await store.getFoods();
     state.variants = await store.getVariants();
     state.targets = await store.getTargets();
-    state.history = (await store.getLogs?.()) || [];
+    state.blocks = (await store.getBlocks()) || [];
+    state.history = (await store.getLogs()) || [];
+    for (const l of state.history) if (!l.tipo && !l.cleared) l.tipo = variantById(l.variantId)?.categoria || 'ON';
     await loadToday();
     wireTabs();
-    installSaveGuards();
     render();
     hideLoader();
   } catch (e) {
@@ -624,6 +700,15 @@ async function boot() {
     showLoaderError('Impossibile caricare i dati. Controlla la connessione e riprova.', boot);
     return;
   }
+
+  // app lasciata aperta oltre la mezzanotte: al ritorno in primo piano, se il
+  // giorno e cambiato, ricarica "Oggi" (altrimenti le spunte finiscono su ieri)
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || state.todayDate === todayISO()) return;
+    await loadToday();
+    state.editMode = false;
+    render({ resetScroll: true });
+  });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

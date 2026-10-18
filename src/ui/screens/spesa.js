@@ -10,7 +10,7 @@ import { weekDays } from '../../core/day.js';
 const MON = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 function dLabel(iso){ const [,m,d]=iso.split('-').map(Number); return `${d} ${MON[m-1]}`; }
 
-const bought = new Set(); // chiavi gia comprate (sessione): foodId o `extra:i`
+const bought = new Set(); // chiavi gia comprate (sessione): `settimana|foodId` o `settimana|extra:nome`
 
 export function renderSpesa(root, ctx) {
   clearTracker();
@@ -36,10 +36,10 @@ export function renderSpesa(root, ctx) {
       agg[r.foodId] = (agg[r.foodId] || 0) + (r.grammatura || 0);
     }
   }
-  const voci = Object.keys(agg).map((foodId) => ({ key: foodId, foodId, grammi: agg[foodId], nome: ctx.foods[foodId]?.nome || foodId }));
+  const voci = Object.keys(agg).map((foodId) => ({ key: `${weekKey}|${foodId}`, foodId, grammi: agg[foodId], nome: ctx.foods[foodId]?.nome || foodId }));
 
   const extras = ctx.extrasOf(weekKey);
-  const vociExtra = extras.map((e, i) => ({ key: `extra:${i}`, index: i, nome: e.nome, extra: true }));
+  const vociExtra = extras.map((e, i) => ({ key: `${weekKey}|extra:${e.nome}`, index: i, nome: e.nome, extra: true }));
 
   const tutte = [...voci, ...vociExtra];
 

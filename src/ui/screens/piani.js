@@ -5,7 +5,7 @@ import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
 import { logMacros, round } from '../format.js';
-import { weekDays, weekdayKey, isSgarroDay } from '../../core/day.js';
+import { weekDays, weekdayKey, isSgarroDay, todayISO } from '../../core/day.js';
 import { openPlanPicker, openConfirm } from '../modal.js';
 
 const DOW_FULL = { lun: 'LUNEDÌ', mar: 'MARTEDÌ', mer: 'MERCOLEDÌ', gio: 'GIOVEDÌ', ven: 'VENERDÌ', sab: 'SABATO', dom: 'DOMENICA' };
@@ -37,8 +37,7 @@ export function renderPiani(root, ctx) {
 
 function renderSettimana(root, ctx) {
   const days = weekDays(ctx.weekRef);
-  const oggi = new Date(); const p = (n) => String(n).padStart(2, '0');
-  const todayISO = `${oggi.getFullYear()}-${p(oggi.getMonth()+1)}-${p(oggi.getDate())}`;
+  const oggiISO = todayISO();
 
   root.append(el('div', { class: 'cal-nav' }, [
     el('button', { class: 'cal-arrow', 'aria-label': 'Settimana precedente', html: icon.back(20), onClick: () => ctx.shiftWeek(-7) }),
@@ -49,7 +48,7 @@ function renderSettimana(root, ctx) {
   const grid = el('div', { class: 'week-grid' });
   for (const iso of days) {
     const log = ctx.logForDate(iso);
-    const isToday = iso === todayISO;
+    const isToday = iso === oggiISO;
     const assigned = log && log.meals && log.meals.some((m) => m.righe && m.righe.length);
     const tipo = log ? (isSgarroDay(log) ? 'SGARRO' : log.tipo) : null;
     const variant = log && log.variantId ? ctx.variantsOf('ON').concat(ctx.variantsOf('OFF')).find((v) => v.id === log.variantId) : null;
@@ -88,7 +87,7 @@ function renderSettimana(root, ctx) {
 function chooseFor(iso, ctx) {
   openPlanPicker({
     variants: [...ctx.variantsOf('ON'), ...ctx.variantsOf('OFF')],
-    onPick: (variantId) => ctx.assignPlanToDay(iso, variantId),
+    onPick: (variantId) => { ctx.assignPlanToDay(iso, variantId); ctx.openDayBanco(iso); },
   });
 }
 

@@ -16,7 +16,7 @@ export function stampFirst(log) {
   return { savedAt: localStamp(), ...rest };
 }
 
-export function createGasStore(url) {
+export function createGasStore(url, token = '') {
   const TIMEOUT_MS = 15000; // GAS puo essere lento, ma non all'infinito
   const RETRIES = 3;        // GAS ha cold-start/quota: un fallimento isolato non e definitivo
   const RETRY_DELAY_MS = 900;
@@ -31,7 +31,7 @@ export function createGasStore(url) {
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // niente preflight CORS
-        body: JSON.stringify({ action, ...payload }),
+        body: JSON.stringify({ action, token, ...payload }),
         signal: ctrl.signal,
       });
     } catch (e) {
@@ -104,6 +104,21 @@ export function createGasStore(url) {
         if (i >= 0) cache.logs[i] = stamped; else cache.logs.unshift(stamped);
       }
       return saved;
+    },
+
+    async getBlocks() { return (await ensure()).blocks || []; },
+    async saveBlock(b) {
+      const saved = await call('saveBlock', { block: b });
+      if (cache) {
+        cache.blocks = cache.blocks || [];
+        const i = cache.blocks.findIndex((x) => x.id === saved.id);
+        if (i >= 0) cache.blocks[i] = saved; else cache.blocks.push(saved);
+      }
+      return saved;
+    },
+    async deleteBlock(id) {
+      await call('deleteBlock', { id });
+      if (cache) cache.blocks = (cache.blocks || []).filter((x) => x.id !== id);
     },
 
     // voci extra della lista spesa (non legate a nessun piano), per settimana

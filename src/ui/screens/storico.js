@@ -3,12 +3,10 @@
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
 import { clearTracker } from '../tracker.js';
-import { dayStatus } from '../../core/day.js';
+import { dayStatus, toISO, todayISO } from '../../core/day.js';
 
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const DOW = ['L','M','M','G','V','S','D']; // lun..dom
-
-function iso(y, m, d) { return `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
 // stato di navigazione del calendario (mese visualizzato), persistente tra render
 let viewY = null, viewM = null;
@@ -27,8 +25,13 @@ export function renderStorico(root, ctx) {
     el('div', {}, [el('div', { class: 'hdr__title', text: 'Storico' })]),
   ]));
 
+  // il backend carica solo i log recenti: oltre il mese del log piu vecchio il
+  // calendario mostrerebbe "non tracciato" anche dove i dati esistono
+  const oldest = ctx.history.reduce((m, l) => (l.data < m ? l.data : m), todayISO());
+  const canGoBack = `${viewY}-${String(viewM + 1).padStart(2, '0')}` > oldest.slice(0, 7);
+
   root.append(el('div', { class: 'cal-nav' }, [
-    el('button', { class: 'cal-arrow', 'aria-label': 'Mese precedente', html: icon.back(20), onClick: () => { shiftMonth(-1); ctx.rerender(); } }),
+    el('button', { class: 'cal-arrow', 'aria-label': 'Mese precedente', disabled: !canGoBack, html: icon.back(20), onClick: () => { shiftMonth(-1); ctx.rerender(); } }),
     el('div', { class: 'cal-title', text: `${MESI[viewM]} ${viewY}` }),
     el('button', { class: 'cal-arrow', 'aria-label': 'Mese successivo', html: icon.back(20).replace('m15 18-6-6 6-6','m9 18 6-6-6-6'), onClick: () => { shiftMonth(1); ctx.rerender(); } }),
   ]));
@@ -43,13 +46,13 @@ export function renderStorico(root, ctx) {
   for (let i = 0; i < offset; i++) grid.append(el('div', { class: 'cal-cell cal-cell--empty' }));
 
   const daysInMonth = new Date(viewY, viewM + 1, 0).getDate();
-  const todayISO = iso(today.getFullYear(), today.getMonth(), today.getDate());
+  const oggiISO = todayISO();
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const dISO = iso(viewY, viewM, d);
+    const dISO = toISO(new Date(viewY, viewM, d));
     const log = byDate[dISO];
     const st = dayStatus(log).stato; // 'ok' | 'sgarro' | 'vuoto'
-    const isToday = dISO === todayISO;
+    const isToday = dISO === oggiISO;
     grid.append(el('div', { class: `cal-cell cal-cell--${st} ${isToday ? 'is-today' : ''}` }, [
       el('span', { class: 'cal-day', text: String(d) }),
       st === 'ok' ? el('span', { class: 'cal-mark cal-mark--ok', html: icon.check(12) })

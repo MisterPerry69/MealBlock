@@ -25,11 +25,11 @@ export function clear(node) { node.replaceChildren(); }
 // come placeholder), cosi scrivi subito il nuovo numero senza cancellare a mano
 // e senza far comparire la barra Android taglia/copia. Se esci senza scrivere,
 // resta il valore di prima. Accetta virgola o punto.
-export function gramInput({ value, extraClass = '', ariaLabel = 'Grammi', disabled = false, onCommit }) {
+export function gramInput({ value, extraClass = '', ariaLabel = 'Grammi', onCommit }) {
   const fmt = (g) => { const n = Number(g) || 0; return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); };
   const input = el('input', {
     class: `erow__g ${extraClass}`, type: 'text', inputmode: 'decimal',
-    value: fmt(value), disabled, 'aria-label': ariaLabel,
+    value: fmt(value), 'aria-label': ariaLabel,
   });
   input.addEventListener('focus', () => { input.placeholder = input.value; input.value = ''; });
   const commit = () => {
@@ -45,19 +45,3 @@ export function gramInput({ value, extraClass = '', ariaLabel = 'Grammi', disabl
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
   return input;
 }
-
-// icone inline (nessuna dipendenza esterna, CSP-safe)
-const S = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
-export const icon = {
-  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
-  lockClosed: `<svg ${S}><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`,
-  lockOpen: `<svg ${S}><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7-1.5"/></svg>`,
-  plus: `<svg ${S}><path d="M12 5v14M5 12h14"/></svg>`,
-  // dumbbell (ON) / moon (OFF)
-  dumbbell: `<svg ${S}><path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12"/></svg>`,
-  moon: `<svg ${S}><path d="M20 14a8 8 0 1 1-9.9-9.9A7 7 0 0 0 20 14z"/></svg>`,
-  offplan: `<svg ${S}><path d="M12 2v20M2 12h20" opacity=".4"/><circle cx="12" cy="12" r="9"/></svg>`,
-  back: `<svg ${S}><path d="M15 18l-6-6 6-6"/></svg>`,
-  trash: `<svg ${S}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-8 0v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7"/></svg>`,
-  wand: `<svg ${S}><path d="M15 4V2M15 10V8M12.5 5.5h-2M19.5 5.5h-2M6 20l10-10-2-2L4 18z"/></svg>`,
-};

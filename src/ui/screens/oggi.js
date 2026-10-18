@@ -1,18 +1,11 @@
 // oggi.js — la schermata principale. Pineapple-plus.
 
 import { el, gramInput } from '../dom.js';
-import { icon } from '../icons.js';
+import { icon, mealIcon } from '../icons.js';
 import { renderTracker } from '../tracker.js';
-import { eatenMacros, logMacros, mealMacros, flatFoods, round } from '../format.js';
-import { weekdayKey, isSgarroDay } from '../../core/day.js';
+import { eatenMacros, logMacros, mealMacros, flatFoods, round, fmtDate } from '../format.js';
+import { isSgarroDay, todayISO } from '../../core/day.js';
 import { macrosOfRows } from '../../core/solver.js';
-
-const DOW = { lun:'Lunedì', mar:'Martedì', mer:'Mercoledì', gio:'Giovedì', ven:'Venerdì', sab:'Sabato', dom:'Domenica' };
-const MON = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-function fmtDate(iso){ const [,m,d]=iso.split('-').map(Number); return `${DOW[weekdayKey(iso)]} ${d} ${MON[m-1]}`; }
-
-const MEAL_IC = { colazione:'colazione', pranzo:'pranzo', cena:'cena', spuntino:'spuntino' };
-const mealIconKey = (id) => MEAL_IC[id] || 'spuntino';
 
 export function renderOggi(root, ctx) {
   const { log } = ctx.today;
@@ -30,7 +23,8 @@ export function renderOggi(root, ctx) {
     ]),
   ]));
 
-  for (const meal of log.meals) root.append(mealCard(meal, foods, ctx, sgarro));
+  const flat = flatFoods(foods);
+  for (const meal of log.meals) root.append(mealCard(meal, foods, flat, ctx, sgarro));
 
   // "Fuori piano" ha senso solo quando NON sei gia in giornata sgarro
   if (!sgarro) root.append(el('button', { class: 'addf', onClick: () => ctx.addSgarro() }, [
@@ -89,37 +83,29 @@ function openDayMenu(sgarro, on, ctx) {
   document.body.append(back);
 }
 
-function mealCard(meal, foods, ctx, sgarro) {
-  const locked = meal.righe.length > 0 && meal.righe.every((r) => r.stato === 'bloccata');
+function mealCard(meal, foods, flat, ctx, sgarro) {
   const m = mealMacros(meal, foods);
   const editable = ctx.editMode || sgarro; // in SGARRO si aggiunge sempre
 
   const head = el('div', { class: 'meal__head' }, [
-    el('span', { class: `meal__ic meal__ic--${mealIconKey(meal.id)}`, html: icon[mealIconKey(meal.id)](18) }),
+    el('span', { class: `meal__ic meal__ic--${mealIcon(meal.id)}`, html: icon[mealIcon(meal.id)](18) }),
     el('span', { class: 'meal__name', text: meal.nome }),
-    // niente lucchetto in giornata sgarro (non ha target/blocchi)
-    sgarro ? null : el('button', {
-      class: 'meal__lock', 'aria-pressed': String(locked),
-      'aria-label': locked ? `${meal.nome} bloccato` : `${meal.nome} aperto`,
-      html: icon[locked ? 'lockClosed' : 'lockOpen'](16),
-      onClick: () => ctx.toggleMealLock(meal.id),
-    }),
-    el('span', { class: 'meal__tot', text: `${round(m.kcal)} kcal` }),
+    el('span', { class: 'meal__tot', 'data-m': 'kcal', text: `${round(m.kcal)} kcal` }),
   ]);
 
-  const rows = meal.righe.map((r, i) => (ctx.editMode || sgarro) ? editFoodRow(meal.id, r, i, foods, ctx) : foodRow(meal.id, r, foods, ctx));
+  const rows = meal.righe.map((r, i) => editable ? editFoodRow(meal.id, r, i, foods, ctx) : foodRow(meal.id, r, foods, flat, ctx));
   const kids = [head, ...rows];
   if (meal.righe.length === 0 && !editable) kids.push(el('div', { class: 'meal-empty', text: '—' }));
   if (editable) kids.push(el('button', { class: 'add-food', onClick: () => ctx.addRowToMeal(meal.id) }, [
     el('span', { html: icon.plus(15) }), 'Aggiungi',
   ]));
-  return el('div', { class: `meal ${locked ? 'meal--locked' : ''}` }, kids);
+  return el('div', { class: 'meal', 'data-meal': meal.id }, kids);
 }
 
-function foodRow(mealId, r, foods, ctx) {
+function foodRow(mealId, r, foods, flat, ctx) {
   const food = foods[r.foodId];
   const nome = food ? food.nome : r.foodId;
-  const mm = macrosOfRows([r], flatFoods(foods));
+  const mm = macrosOfRows([r], flat);
 
   return el('div', { class: `row ${r.eaten ? 'row--eaten' : ''}` }, [
     el('button', {
@@ -149,26 +135,19 @@ function editFoodRow(mealId, r, index, foods, ctx) {
     el('button', { class: 'erow__swap', 'aria-label': `Sostituisci ${nome}`, text: nome,
       onClick: () => ctx.replaceFood(mealId, index) }),
     gramInput({
-      value: r.grammatura, disabled: r.locked, extraClass: r.locked ? 'is-locked' : '',
+      value: r.grammatura,
       ariaLabel: `Grammi di ${nome}`,
       onCommit: (g) => ctx.setRowGram(mealId, index, g),
     }),
-    el('button', { class: 'erow__lock', 'aria-pressed': String(!!r.locked),
-      'aria-label': r.locked ? `${nome} bloccato` : `Blocca ${nome}`,
-      html: icon[r.locked ? 'lockClosed' : 'lockOpen'](16),
-      onClick: () => ctx.toggleRowLock(mealId, index) }),
     el('button', { class: 'erow__del', 'aria-label': `Rimuovi ${nome}`, html: icon.trash(16),
       onClick: () => ctx.removeRow(mealId, index) }),
   ]);
 }
 
-// mostra grammi senza arrotondare
-function fmtG(g) { const n = Number(g) || 0; return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); }
-
 // Oggi senza piano assegnato: selettore rapido ON/OFF invece del contenuto normale.
 function renderEmptyToday(root, ctx) {
   root.append(el('div', { class: 'ohdr' }, [
-    el('div', { class: 'ohdr__date', text: fmtDate(todayISOLocal()) }),
+    el('div', { class: 'ohdr__date', text: fmtDate(todayISO()) }),
   ]));
   root.append(el('div', { class: 'empty-today' }, [
     el('div', { class: 'empty-today__hint', text: 'Nessun piano assegnato a oggi. Scegli da dove partire:' }),
@@ -179,7 +158,11 @@ function renderEmptyToday(root, ctx) {
   ]));
 }
 
-function todayISOLocal() {
-  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+// aggiorna SOLO i totali kcal dei pasti, senza ricostruire le righe (la tastiera
+// resta aperta mentre si digita)
+export function refreshOggiNumbers(log, foods) {
+  for (const meal of log.meals) {
+    const node = document.querySelector(`.meal[data-meal="${meal.id}"] .meal__tot`);
+    if (node) node.textContent = `${round(mealMacros(meal, foods).kcal)} kcal`;
+  }
 }

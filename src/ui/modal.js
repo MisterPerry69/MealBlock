@@ -1,6 +1,7 @@
 // modal.js — modal centrale riutilizzabile + form/dialoghi costruiti sopra.
 
-import { el, gramInput } from './dom.js';
+import { el } from './dom.js';
+import { MEAL_TYPES } from './format.js';
 import { icon } from './icons.js';
 
 // parse numero accettando virgola o punto come separatore decimale
@@ -13,24 +14,24 @@ function num(v) {
  * Apre un modal centrale. `build(close)` riceve la funzione di chiusura e
  * restituisce il contenuto (nodo). Ritorna la funzione close.
  */
-export function openModal({ title, build }) {
+export function openModal({ title, build, cls = '', focus = true }) {
   let backdrop;
   function close() { backdrop?.remove(); document.removeEventListener('keydown', onKey); }
   function onKey(e) { if (e.key === 'Escape') close(); }
 
-  const head = el('div', { class: 'modal__head' }, [
+  // title === null: il contenuto porta la propria intestazione (selettore cibo)
+  const head = title === null ? null : el('div', { class: 'modal__head' }, [
     el('h2', { class: 'modal__title', text: title || '' }),
     el('button', { class: 'modal__x', 'aria-label': 'Chiudi', html: icon.close(20), onClick: close }),
   ]);
 
   const body = build(close);
-  const card = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, [head, body]);
+  const card = el('div', { class: `modal ${cls}`, role: 'dialog', 'aria-modal': 'true' }, [head, body]);
   backdrop = el('div', { class: 'modal-backdrop', onClick: (e) => { if (e.target === backdrop) close(); } }, [card]);
 
   document.body.append(backdrop);
   document.addEventListener('keydown', onKey);
-  // focus al primo campo
-  setTimeout(() => card.querySelector('input,button')?.focus(), 30);
+  if (focus) setTimeout(() => card.querySelector('input,button')?.focus(), 30);
   return close;
 }
 
@@ -38,25 +39,6 @@ export function openModal({ title, build }) {
 function field(label, attrs = {}) {
   const input = el('input', { class: 'f__input', ...attrs });
   const wrap = el('label', { class: 'f' }, [el('span', { class: 'f__label', text: label }), input]);
-  return { wrap, input };
-}
-
-// campo grammi "usa e getta" (niente popup nativo di selezione testo su Android),
-// con la stessa forma { wrap, input } di field() ma un input finto che espone
-// getter/setter .value che leggono il valore corrente anche a fuoco attivo.
-function gramField(label, placeholder) {
-  const real = gramInput({ value: '', extraClass: 'f__input', ariaLabel: label, onCommit: () => {} });
-  real.value = '';
-  real.placeholder = placeholder || '';
-  const input = {
-    get value() { return real === document.activeElement ? (real.placeholder || '') : real.value; },
-    set value(v) {
-      real.value = v === '' ? '' : String(v);
-      if (real === document.activeElement) real.placeholder = real.value;
-    },
-    focus: () => real.focus(),
-  };
-  const wrap = el('label', { class: 'f' }, [el('span', { class: 'f__label', text: label }), real]);
   return { wrap, input };
 }
 
@@ -143,95 +125,196 @@ export function guessEmoji(nome) {
 }
 
 /**
- * Picker cibo. Modalita SINGOLA: scegli un cibo + grammi -> onConfirm({foodId,grammatura}).
- * Modalita MULTI (tieni premuto su un cibo): selezioni piu cibi -> onConfirmMulti([foodId])
- *   e le grammature le decide il chiamante (ultima usata).
+ * Selettore per aggiungere a un pasto. Elenco compatto: prima i BLOCCHI di quel
+ * tipo di pasto, poi i cibi sfusi. Si sceglie una voce e "Aggiungi":
+ *  - cibo   -> lo stesso modal passa alla schermata dei grammi -> onConfirm({foodId, grammatura})
+ *  - blocco -> inserito subito (i grammi si ritoccano dalla giornata) -> onConfirmBlock(block)
+ * Tocco lungo su un cibo = selezione multipla -> onConfirmMulti([foodId]) (grammi: ultima usata).
+ * `blocks`: [{ id, nome, righe, kcal }]. Il modal sta sempre in alto: con la tastiera
+ * cambia solo l'altezza, niente salti.
  */
-export function openSgarroForm({ foods, onCreateFood, onConfirm, onConfirmMulti, title = 'Aggiungi cibo', preId = null, suggestGram = null }) {
+export function openFoodPicker({ foods, blocks = [], mealNome = '', onCreateFood, onConfirm, onConfirmMulti, onConfirmBlock, suggestGram = null, preId = null }) {
   return openModal({
-    title,
+    title: null, cls: 'modal--picker', focus: false,
     build(close) {
       const list = Object.values(foods);
-      let selectedId = preId;
-      let multi = false;                 // modalita selezione multipla attiva?
-      const chosen = new Set();          // foodId selezionati in multi
+      let sel = preId ? { type: 'food', id: preId } : null;   // selezione singola
+      let multi = false;                                        // selezione multipla (solo cibi)
+      const chosen = new Set();
 
-      const search = el('input', { class: 'f__input', type: 'text', placeholder: 'Cerca un cibo…', 'aria-label': 'Cerca cibo' });
+      const root = el('div', { class: 'picker' });
+      const search = el('input', { class: 'f__input picker__search', type: 'text', placeholder: 'Cerca…', 'aria-label': 'Cerca' });
       const results = el('div', { class: 'food-results' });
-      const foot = el('div', { class: 'picker__foot' });
 
-      const gram = gramField('Grammi', 'es. 150');
+      const closeBtn = () => el('button', { class: 'modal__x', 'aria-label': 'Chiudi', html: icon.close(20), onClick: close });
 
-      function pickSingle(f) {
-        selectedId = f.id;
-        const g = suggestGram && suggestGram(f.id);
-        if (g && !gram.input.value) gram.input.value = String(g);
-        renderResults(); renderFoot(); gram.input.focus();
+      // ---------- schermata 1: elenco ----------
+      function foodOpt(f) {
+        const p = f.per100g;
+        const on = multi ? chosen.has(f.id) : (sel?.type === 'food' && sel.id === f.id);
+        const item = el('button', { class: `food-opt ${on ? 'is-sel' : ''}` }, [
+          multi ? el('span', { class: `food-opt__chk ${on ? 'on' : ''}`, html: icon.check(12) }) : el('span', { class: `food-opt__rad ${on ? 'on' : ''}` }),
+          el('span', { class: 'food-opt__name', text: f.nome }),
+          el('span', { class: 'food-opt__macros' }, [
+            `${p.kcal} `,
+            el('span', { class: 'mc mc--c', text: `${p.carbo}C ` }),
+            el('span', { class: 'mc mc--p', text: `${p.prot}P ` }),
+            el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
+          ]),
+        ]);
+        // click: seleziona (o toggle in multi). Tocco lungo: entra in multi.
+        let held = false, timer = null;
+        const start = () => { held = false; timer = setTimeout(() => { held = true; if (onConfirmMulti) { multi = true; sel = null; chosen.add(f.id); renderList(); } }, 450); };
+        const end = (e) => {
+          clearTimeout(timer); if (held) return; e.preventDefault();
+          if (multi) { chosen.has(f.id) ? chosen.delete(f.id) : chosen.add(f.id); }
+          else sel = { type: 'food', id: f.id };
+          renderList();
+        };
+        item.addEventListener('pointerdown', start);
+        item.addEventListener('pointerup', end);
+        item.addEventListener('pointerleave', () => clearTimeout(timer));
+        return item;
       }
-      function enterMulti(f) { multi = true; chosen.add(f.id); renderResults(); renderFoot(); }
-      function toggleMulti(f) { if (chosen.has(f.id)) chosen.delete(f.id); else chosen.add(f.id); renderResults(); renderFoot(); }
 
-      function renderResults() {
+      function blockOpt(b) {
+        const on = sel?.type === 'block' && sel.id === b.id;
+        const sub = b.righe.map((r) => foods[r.foodId]?.nome || r.foodId).join(' · ');
+        const item = el('button', { class: `food-opt food-opt--blk ${on ? 'is-sel' : ''}` }, [
+          el('span', { class: `food-opt__rad ${on ? 'on' : ''}` }),
+          el('span', { class: 'food-opt__main' }, [
+            el('span', { class: 'food-opt__name', text: b.nome }),
+            el('span', { class: 'food-opt__sub', text: sub }),
+          ]),
+          el('span', { class: 'food-opt__macros', text: `${Math.round(b.kcal)} kcal` }),
+        ]);
+        item.addEventListener('click', () => { sel = { type: 'block', id: b.id }; renderList(); });
+        return item;
+      }
+
+      function renderList() {
         const q = search.value.trim().toLowerCase();
-        const filtered = list.filter((f) => f.nome.toLowerCase().includes(q)).slice(0, 40);
-        results.replaceChildren(...filtered.map((f) => {
-          const p = f.per100g;
-          const sel = multi ? chosen.has(f.id) : (f.id === selectedId);
-          const item = el('button', {
-            class: `food-opt ${sel ? 'is-sel' : ''}`,
-          }, [
-            multi ? el('span', { class: `food-opt__chk ${chosen.has(f.id) ? 'on' : ''}`, html: icon.check(12) }) : null,
-            el('span', { class: 'food-opt__name', text: f.nome }),
-            el('span', { class: 'food-opt__macros' }, [
-              `${p.kcal} `,
-              el('span', { class: 'mc mc--c', text: `${p.carbo}C ` }),
-              el('span', { class: 'mc mc--p', text: `${p.prot}P ` }),
-              el('span', { class: 'mc mc--f', text: `${p.fat}F` }),
-            ]),
-          ]);
-          // click: singolo o toggle (in multi). Hold: entra in multi.
-          let held = false, timer = null;
-          const start = () => { held = false; timer = setTimeout(() => { held = true; if (onConfirmMulti) enterMulti(f); }, 450); };
-          const end = (e) => { clearTimeout(timer); if (held) return; e.preventDefault(); multi ? toggleMulti(f) : pickSingle(f); };
-          item.addEventListener('pointerdown', start);
-          item.addEventListener('pointerup', end);
-          item.addEventListener('pointerleave', () => clearTimeout(timer));
-          return item;
-        }));
-        if (filtered.length === 0) results.append(el('div', { class: 'food-none', text: 'Nessun cibo. Creane uno nuovo qui sotto.' }));
+        const fb = multi ? [] : blocks.filter((b) => b.nome.toLowerCase().includes(q));
+        const ff = list.filter((f) => f.nome.toLowerCase().includes(q)).slice(0, 60);
+        const kids = [];
+        if (fb.length) { kids.push(el('div', { class: 'picker__label', text: 'Blocchi' })); kids.push(...fb.map(blockOpt)); }
+        if (ff.length) {
+          if (fb.length) kids.push(el('div', { class: 'picker__label', text: 'Cibi' }));
+          kids.push(...ff.map(foodOpt));
+        }
+        if (!fb.length && !ff.length) kids.push(el('div', { class: 'food-none', text: 'Niente trovato. Creane uno nuovo qui sotto.' }));
+        results.replaceChildren(...kids);
+        renderFoot();
       }
 
+      const foot = el('div', { class: 'picker__foot' });
       function renderFoot() {
-        const newBtn = el('button', { class: 'modal-btn', text: '+ Nuovo cibo', onClick: () => {
+        const newBtn = el('button', { class: 'modal-btn modal-btn--ghost', text: '+ Nuovo', onClick: () => {
           close();
           openFoodForm({ onSave: (data) => {
             const id = onCreateFood(data);
-            openSgarroForm({ foods: { ...foods, [id]: { id, ...data } }, onCreateFood, onConfirm, onConfirmMulti, title, suggestGram, preId: id });
+            openFoodPicker({ foods: { ...foods, [id]: { id, ...data } }, blocks, mealNome, onCreateFood, onConfirm, onConfirmMulti, onConfirmBlock, suggestGram, preId: id });
           }});
         }});
-
+        let label = 'Aggiungi', ready = !!sel, act = null;
         if (multi) {
-          const add = el('button', { class: 'modal-btn modal-btn--primary', text: `Aggiungi ${chosen.size} ${chosen.size === 1 ? 'cibo' : 'cibi'}`, onClick: () => {
-            if (chosen.size === 0) return;
-            onConfirmMulti([...chosen]); close();
-          }});
-          const hint = el('div', { class: 'f-hint', text: 'Selezione multipla: le grammature saranno le ultime usate. Tocca per aggiungere/togliere.' });
-          foot.replaceChildren(hint, el('div', { class: 'modal-actions' }, [newBtn, add]));
-        } else {
-          const add = el('button', { class: 'modal-btn modal-btn--primary', text: 'Aggiungi', onClick: () => {
-            const g = parseFloat(String(gram.input.value).replace(',', '.')) || 0;
-            if (!selectedId) { search.focus(); return; }
-            if (!g) { gram.input.focus(); return; }
-            onConfirm({ foodId: selectedId, grammatura: g }); close();
-          }});
-          foot.replaceChildren(gram.wrap, el('div', { class: 'modal-actions' }, [newBtn, add]));
+          label = `Aggiungi ${chosen.size} ${chosen.size === 1 ? 'cibo' : 'cibi'}`; ready = chosen.size > 0;
+          act = () => { onConfirmMulti([...chosen]); close(); };
+        } else if (sel?.type === 'block') {
+          label = 'Aggiungi blocco';
+          act = () => { onConfirmBlock(blocks.find((b) => b.id === sel.id)); close(); };
+        } else if (sel?.type === 'food') {
+          act = () => showGrams(foods[sel.id]);
         }
+        const add = el('button', { class: `modal-btn modal-btn--primary ${ready ? '' : 'is-off'}`, text: label, onClick: () => { if (ready && act) act(); else search.focus(); } });
+        foot.replaceChildren(newBtn, add);
       }
 
-      search.addEventListener('input', renderResults);
-      renderResults(); renderFoot();
+      function showList() {
+        root.replaceChildren(
+          el('div', { class: 'picker__head' }, [
+            el('div', { class: 'picker__title' }, [mealNome ? el('small', { text: mealNome }) : null, 'Aggiungi']),
+            closeBtn(),
+          ]),
+          search, results, foot,
+        );
+        renderList();
+      }
 
-      return el('div', { class: 'picker' }, [search, results, foot]);
+      // ---------- schermata 2: grammi (solo per un cibo) ----------
+      function showGrams(food) {
+        const p = food.per100g;
+        const last = suggestGram ? suggestGram(food.id) : null;
+        const input = el('input', { class: 'bigg', type: 'text', inputmode: 'decimal', placeholder: last ? String(last) : '0', 'aria-label': `Grammi di ${food.nome}` });
+        const live = el('div', { class: 'live' });
+        const val = () => {
+          const n = parseFloat(String(input.value).replace(',', '.'));
+          return Number.isFinite(n) && n > 0 ? n : (last || 0);
+        };
+        const paint = () => {
+          const g = val(), k = g / 100;
+          live.replaceChildren(`${Math.round(p.kcal * k)} kcal · `,
+            el('span', { class: 'mc mc--c', text: `${Math.round(p.carbo * k)}C ` }),
+            el('span', { class: 'mc mc--p', text: `${Math.round(p.prot * k)}P ` }),
+            el('span', { class: 'mc mc--f', text: `${Math.round(p.fat * k)}F` }));
+        };
+        const confirm = () => {
+          const g = val();
+          if (!g) { input.focus(); return; }
+          onConfirm({ foodId: food.id, grammatura: g }); close();
+        };
+        input.addEventListener('input', paint);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); });
+
+        const quick = [50, 100, 150];
+        if (last && !quick.includes(last)) quick.push(last);
+        const chips = el('div', { class: 'quick' }, quick.map((g) => el('button', {
+          class: `quick__c ${g === last ? 'is-last' : ''}`, text: g === last ? `ultimo: ${g}` : String(g),
+          onClick: () => { input.value = String(g); paint(); input.focus(); },
+        })));
+
+        root.replaceChildren(
+          el('div', { class: 'picker__head' }, [
+            el('button', { class: 'modal__x', 'aria-label': 'Indietro', html: icon.back(20), onClick: showList }),
+            el('div', { class: 'picker__title' }, [
+              el('small', { text: `${p.kcal} kcal · ${p.carbo}C ${p.prot}P ${p.fat}F ogni 100g` }), food.nome,
+            ]),
+            closeBtn(),
+          ]),
+          el('div', { class: 'bigg-wrap' }, [input, el('span', { class: 'bigg-u', text: 'g' })]),
+          chips, live,
+          el('div', { class: 'picker__spacer' }),
+          el('div', { class: 'picker__foot' }, [el('button', { class: 'modal-btn modal-btn--primary', text: 'Conferma', onClick: confirm })]),
+        );
+        paint();
+        setTimeout(() => input.focus(), 30);
+      }
+
+      search.addEventListener('input', renderList);
+      showList();
+      return root;
+    },
+  });
+}
+
+/** Nuovo blocco: nome + tipo di pasto. onCreate({ nome, mealId }). */
+export function openBlockForm({ onCreate }) {
+  return openModal({
+    title: 'Nuovo blocco',
+    build(close) {
+      const nome = field('Nome', { type: 'text', placeholder: 'es. Colazione proteica' });
+      let mealId = MEAL_TYPES[0].id;
+      const chips = el('div', { class: 'quick quick--wrap' }, MEAL_TYPES.map((m) => {
+        const b = el('button', { class: `quick__c ${m.id === mealId ? 'is-on' : ''}`, text: m.nome, onClick: () => {
+          mealId = m.id; chips.querySelectorAll('.quick__c').forEach((x) => x.classList.toggle('is-on', x === b));
+        } });
+        return b;
+      }));
+      const save = el('button', { class: 'modal-btn modal-btn--primary', text: 'Crea', onClick: () => {
+        const v = nome.input.value.trim(); if (!v) { nome.input.focus(); return; }
+        onCreate({ nome: v, mealId }); close();
+      }});
+      return el('div', {}, [nome.wrap, el('div', { class: 'f__label', text: 'Per quale pasto' }), chips, el('div', { class: 'modal-actions' }, [save])]);
     },
   });
 }
@@ -292,9 +375,9 @@ export function openConfirm({ title = 'Sei sicuro?', message = '', confirmLabel 
 }
 
 /** Rinomina: un solo campo testo. onSave(nuovoNome). */
-export function openRenameForm({ value, onSave }) {
+export function openRenameForm({ value, onSave, title = 'Rinomina piano' }) {
   return openModal({
-    title: 'Rinomina piano',
+    title,
     build(close) {
       const f = field('Nome', { type: 'text', value: value || '' });
       const save = el('button', { class: 'modal-btn modal-btn--primary', text: 'Salva', onClick: () => {

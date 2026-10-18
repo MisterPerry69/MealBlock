@@ -41,6 +41,19 @@ I dati vivono nel tuo Drive, non sul dispositivo: niente rischio cache-clear.
 Al primo avvio con backend vuoto, l'app semina da sola le due giornate di
 esempio. Poi le modifichi da **Piani** e **Cibi**.
 
+### Aggiornare un backend gia attivo
+
+Dopo aver incollato i nuovi `gas/*.gs` e ridistribuito (Distribuisci → Gestisci
+distribuzioni → modifica → Nuova versione):
+
+- I Blocchi (pasti prefatti) usano una tab `blocks` che il backend crea da sola
+  al primo uso: basta ridistribuire.
+- Nella tab `foods` scrivi `emoji` nell'intestazione della colonna J (serve per
+  salvare l'emoji dei cibi).
+- Opzionale, contro chi trova il link: Impostazioni progetto → Proprieta script
+  → aggiungi `TOKEN` con un valore a tua scelta, e metti lo stesso valore in
+  `API_TOKEN` di `src/data/config.js`.
+
 ## Struttura
 
 - `src/core/solver.js` — motore "riempi il resto" (puro, testato)

@@ -23,24 +23,18 @@ test('weekdayKey mappa una data ISO alla chiave giorno (lun..dom)', () => {
   assert.equal(weekdayKey('2026-07-26'), 'dom');
 });
 
-test('buildLog crea un log dal template, con pranzo lavorativo bloccato di default', () => {
-  // 2026-07-27 = lunedi (giorno lavorativo) -> pranzo bloccato.
+test('buildLog crea un log dal template', () => {
   const log = buildLog('2026-07-27', template, targetON);
 
   assert.equal(log.data, '2026-07-27');
   assert.equal(log.tipo, 'ON');
   assert.deepEqual(log.target, targetON); // il target e copiato nel log, non un riferimento al piano
-  const pranzo = log.meals.find((m) => m.id === 'pranzo');
-  const cena = log.meals.find((m) => m.id === 'cena');
-  assert.equal(pranzo.righe[0].stato, 'bloccata'); // lavorativo -> default bloccato
-  assert.equal(cena.righe[0].stato, 'aperta');
+  assert.equal(log.meals.find((m) => m.id === 'pranzo').righe[0].foodId, 'pollo');
 });
 
-test('buildLog nel weekend non blocca il pranzo di default', () => {
-  // 2026-07-26 = domenica.
-  const log = buildLog('2026-07-26', template, targetON);
-  const pranzo = log.meals.find((m) => m.id === 'pranzo');
-  assert.equal(pranzo.righe[0].stato, 'aperta');
+test('buildLog: un piano creato nella app (solo categoria, niente tipo) da un log col tipo giusto', () => {
+  const piano = { id: 'on-1', nome: 'Nuovo piano', categoria: 'ON', meals: template.meals };
+  assert.equal(buildLog('2026-07-27', piano, targetON).tipo, 'ON');
 });
 
 test('buildLog: il target del log e un clone, non condivide riferimento con quello passato', () => {
@@ -50,7 +44,7 @@ test('buildLog: il target del log e un clone, non condivide riferimento con quel
 });
 
 test('switchDayType: cambia tipo E target, i pasti restano identici', () => {
-  const log = buildLog('2026-07-27', template, targetON); // ON, pranzo pollo 200g bloccato, cena riso 100g aperta
+  const log = buildLog('2026-07-27', template, targetON); // ON, pranzo pollo 200g, cena riso 100g aperta
   const out = switchDayType(log, 'OFF', targetOFF);
 
   assert.equal(out.tipo, 'OFF');
@@ -97,7 +91,7 @@ test('dayStatus: sgarro se giornata SGARRO o ha righe sgarro', () => {
   const s = markSgarroDay(buildLog('2026-07-27', template, targetON), true);
   assert.equal(dayStatus(s, foods).stato, 'sgarro');
   const log = buildLog('2026-07-27', template, targetON);
-  log.meals[0].righe.push({ foodId: 'pollo', grammatura: 100, stato: 'bloccata', isSgarro: true, eaten: true });
+  log.meals[0].righe.push({ foodId: 'pollo', grammatura: 100, isSgarro: true, eaten: true });
   assert.equal(dayStatus(log, foods).stato, 'sgarro');
 });
 
